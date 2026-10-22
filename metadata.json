@@ -1,0 +1,7 @@
+{
+  "name": "elio+",
+  "description": "A refined, distraction-free movie and series streaming platform with seamless playback, episode tracking, and sleek cinematic design.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

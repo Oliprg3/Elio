@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Pure Black Background -->
+  <rect width="512" height="512" rx="128" fill="#000000" />
+  <rect x="2" y="2" width="508" height="508" rx="126" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="4" />
+  
+  <!-- Minimalist Geometric Cinema Mark (Crisp White Vector) -->
+  <path d="M185 130v252a14 14 0 0 0 21.3 11.9l200-126a14 14 0 0 0 0-23.8l-200-126A14 14 0 0 0 185 130z" fill="#ffffff" />
+</svg>
