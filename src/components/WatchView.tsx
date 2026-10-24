@@ -16,8 +16,6 @@ import {
   RotateCw,
   AlertCircle,
   ExternalLink,
-  Server,
-  Zap,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TMDBMedia, MediaDetail, TVSeasonDetail, TVEpisode } from '../types/tmdb';
@@ -41,7 +39,6 @@ import { NetflixEpisodeGuide } from './NetflixEpisodeGuide';
 import { StreamQualityControl } from './StreamQualityControl';
 import { RelatedMediaSection } from './RelatedMediaSection';
 import { DownloadMediaModal } from './DownloadMediaModal';
-import { CustomSelect } from './CustomSelect';
 import { adBlocker, AdBlockLevel } from '../services/adBlocker';
 
 interface WatchViewProps {
@@ -113,13 +110,8 @@ export const WatchView: React.FC<WatchViewProps> = ({
     if (settings.streamEnhancer !== undefined) {
       setStreamEnhancer(settings.streamEnhancer);
     }
-    const preferred = settings.preferredServer;
-    const foundIdx = preferred ? STREAM_SERVERS.findIndex((s) => s.id === preferred) : -1;
-    if (foundIdx !== -1) {
-      setServerIndex(foundIdx);
-    } else {
-      setServerIndex(0);
-    }
+    setServerIndex(0);
+    saveSettings({ preferredServer: 'vidzee' });
 
     const prevHistory = getHistoryItem(id, type);
     if (prevHistory) {
@@ -275,34 +267,11 @@ export const WatchView: React.FC<WatchViewProps> = ({
     setShowNextPrompt(false);
   };
 
-  // Switch to specific server with preference persistence in background
-  const handleSwitchServerTo = (nextIdx: number) => {
-    const validIdx = (nextIdx + STREAM_SERVERS.length) % STREAM_SERVERS.length;
-    setServerIndex(validIdx);
-    setPlayerKey((k) => k + 1);
-    const targetServer = STREAM_SERVERS[validIdx];
-    if (targetServer) {
-      saveSettings({ preferredServer: targetServer.id });
-      setPlayerNotification(`Active: ${targetServer.name}`);
-      setTimeout(() => setPlayerNotification(null), 3000);
-    }
-  };
-
-  // Switch to next server if stream buffers or is slow
-  const handleAutoSwitchServer = () => {
-    handleSwitchServerTo(serverIndex + 1);
-  };
-
-  // Compute Active Stream URL based on current automatic server
-  const currentServerObj = STREAM_SERVERS[serverIndex % STREAM_SERVERS.length] || STREAM_SERVERS[0];
-  const activeMovieId = (currentServerObj.id === '2embed' && media?.imdb_id) ? media.imdb_id : id;
-
-  let streamUrl = '';
-  if (type === 'movie') {
-    streamUrl = currentServerObj.getMovieUrl(activeMovieId);
-  } else {
-    streamUrl = currentServerObj.getTvUrl(id, selectedSeason, selectedEpisode);
-  }
+  // VidZee is the dedicated exclusive stream provider
+  const streamUrl =
+    type === 'movie'
+      ? `https://player.vidzee.wtf/embed/movie/${id}?lang=en&sub=en`
+      : `https://player.vidzee.wtf/embed/tv/${id}/${selectedSeason}/${selectedEpisode}?lang=en&sub=en`;
 
 
   const toggleWatchlist = () => {
@@ -403,8 +372,8 @@ export const WatchView: React.FC<WatchViewProps> = ({
         if (type === 'tv') handleNextEpisode();
       } else if (key === 'MediaTrackPrevious' || key === 'p' || key === 'P') {
         if (type === 'tv') handlePrevEpisode();
-      } else if (key === 's' || key === 'S') {
-        handleAutoSwitchServer();
+      } else if (key === 'r' || key === 'R') {
+        setPlayerKey((k) => k + 1);
       }
     };
 
@@ -588,32 +557,6 @@ export const WatchView: React.FC<WatchViewProps> = ({
               <span className="hidden sm:inline">Reload</span>
             </button>
 
-            {/* Server Selector Dropdown */}
-            <div className="flex items-center gap-1.5">
-              <CustomSelect
-                id="stream-server-select"
-                options={STREAM_SERVERS.map((server, idx) => ({
-                  value: idx,
-                  label: server.name,
-                  badge: server.badge,
-                }))}
-                value={serverIndex}
-                onChange={(newIdx) => handleSwitchServerTo(Number(newIdx))}
-                size="sm"
-                className="w-44 sm:w-52"
-              />
-
-              {/* Fast Next Server Switcher */}
-              <button
-                id="btn-auto-switch-server"
-                onClick={handleAutoSwitchServer}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.06] text-xs font-medium transition-all cursor-pointer shadow-sm active:scale-95"
-                title={`Try next server (${STREAM_SERVERS[(serverIndex + 1) % STREAM_SERVERS.length].name})`}
-              >
-                <Zap className="w-3.5 h-3.5 text-amber-400" />
-                <span className="hidden sm:inline">Switch Server</span>
-              </button>
-            </div>
 
             {/* Zero Pop-up Protection Shield Indicator */}
             <span className="text-[11px] font-medium text-zinc-400 bg-white/[0.04] px-2.5 py-1 rounded-full border border-white/[0.06] hidden md:flex items-center gap-1.5">

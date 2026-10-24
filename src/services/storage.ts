@@ -102,7 +102,7 @@ export interface UserSettings {
 }
 
 const DEFAULT_SETTINGS: UserSettings = {
-  preferredServer: 'autoembed',
+  preferredServer: 'vidzee',
   tmdbApiKey: '',
   autoNextEpisode: true,
   qualityPreference: '1080p',
