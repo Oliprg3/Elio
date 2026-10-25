@@ -16,6 +16,7 @@ import {
   RotateCw,
   AlertCircle,
   ExternalLink,
+  ShieldCheck,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TMDBMedia, MediaDetail, TVSeasonDetail, TVEpisode } from '../types/tmdb';
@@ -40,6 +41,7 @@ import { StreamQualityControl } from './StreamQualityControl';
 import { RelatedMediaSection } from './RelatedMediaSection';
 import { DownloadMediaModal } from './DownloadMediaModal';
 import { adBlocker, AdBlockLevel } from '../services/adBlocker';
+import { probeVidzeeProxy } from '../services/vidzeeProxy';
 
 interface WatchViewProps {
   type: 'movie' | 'tv';
@@ -79,6 +81,8 @@ export const WatchView: React.FC<WatchViewProps> = ({
   const [selectedQuality, setSelectedQuality] = useState<'auto' | '1080p' | '4k' | '720p'>('1080p');
   const [streamEnhancer, setStreamEnhancer] = useState<boolean>(true);
   const [showNextPrompt, setShowNextPrompt] = useState<boolean>(false);
+  const [streamSource, setStreamSource] = useState<'pending' | 'proxy' | 'direct'>('pending');
+  const [forceDirect, setForceDirect] = useState(false);
   const [audioBoost, setAudioBoost] = useState<number>(100);
   const [adBlockLevel, setAdBlockLevel] = useState<AdBlockLevel>(adBlocker.getLevel());
   const [playerNotification, setPlayerNotification] = useState<string | null>(null);
@@ -114,6 +118,19 @@ export const WatchView: React.FC<WatchViewProps> = ({
     return () => {
       window.removeEventListener('elio:adblock:popup-blocked', handlePopupBlocked);
       if (notifyTimer) clearTimeout(notifyTimer);
+    };
+  }, []);
+
+  // Detect whether the ad-stripped player proxy is available once per page
+  // load. If it is, the iframe loads the proxied embed from our own origin
+  // with ad scripts and ad slots removed at the server level.
+  useEffect(() => {
+    let alive = true;
+    probeVidzeeProxy().then((available) => {
+      if (alive) setStreamSource(available ? 'proxy' : 'direct');
+    });
+    return () => {
+      alive = false;
     };
   }, []);
 
@@ -288,11 +305,19 @@ export const WatchView: React.FC<WatchViewProps> = ({
     setShowNextPrompt(false);
   };
 
-  // VidZee is the dedicated exclusive stream provider
-  const streamUrl =
+  // VidZee is the dedicated exclusive stream provider. When the shield proxy
+  // is available, load the embed through our own origin so ad scripts and ad
+  // overlay slots are stripped at the server level.
+  const vidzeePath =
     type === 'movie'
-      ? `https://player.vidzee.wtf/embed/movie/${id}?lang=en&sub=en`
-      : `https://player.vidzee.wtf/embed/tv/${id}/${selectedSeason}/${selectedEpisode}?lang=en&sub=en`;
+      ? `/embed/movie/${id}?lang=en&sub=en`
+      : `/embed/tv/${id}/${selectedSeason}/${selectedEpisode}?lang=en&sub=en`;
+
+  const useShieldProxy = !forceDirect && streamSource === 'proxy';
+
+  const streamUrl = useShieldProxy
+    ? vidzeePath
+    : `https://player.vidzee.wtf${vidzeePath}`;
 
 
   const toggleWatchlist = () => {
@@ -582,6 +607,24 @@ export const WatchView: React.FC<WatchViewProps> = ({
               <span className="hidden sm:inline">Reload</span>
             </button>
 
+            {/* Fallback to the raw provider embed while proxy mode is active */}
+            {streamSource === 'proxy' && (
+              <button
+                id="btn-direct-embed"
+                onClick={() => {
+                  adBlocker.suppressNextPopups(3000);
+                  setForceDirect((prev) => !prev);
+                  setPlayerNotification(forceDirect ? 'Shielded player restored' : 'Direct provider embed (fallback)');
+                  setTimeout(() => setPlayerNotification(null), 2500);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.06] text-xs font-medium transition-all cursor-pointer shadow-sm active:scale-95"
+                title={forceDirect ? 'Return to the ad-shielded player' : 'Use the raw VidZee embed if the video fails to load'}
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-zinc-400" />
+                <span className="hidden sm:inline">{forceDirect ? 'Shielded' : 'Direct'}</span>
+              </button>
+            )}
+
 
             {/* Zero Pop-up Protection Shield Indicator */}
             <span className="text-[11px] font-medium text-zinc-400 bg-white/[0.04] px-2.5 py-1 rounded-full border border-white/[0.06] hidden md:flex items-center gap-1.5">
@@ -669,17 +712,28 @@ export const WatchView: React.FC<WatchViewProps> = ({
           <div className="absolute -inset-4 bg-gradient-to-r from-white/[0.02] via-zinc-800/[0.02] to-transparent blur-3xl opacity-30 pointer-events-none -z-10" />
 
           <>
-            <iframe
-              key={`${streamUrl}-${playerKey}-${adBlockLevel}`}
-              id="cinestream-player-frame"
-              src={streamUrl}
-              title={`${title} Stream Player`}
-              className="absolute inset-0 w-full h-full border-0 bg-black"
-              allowFullScreen
-              allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
-              referrerPolicy="origin"
-              sandbox={adBlocker.getIframeSandboxAttributes() || 'allow-scripts allow-same-origin allow-presentation allow-pointer-lock allow-forms'}
-            />
+            {streamSource === 'pending' ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black">
+                <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                <span className="text-xs text-zinc-400 font-medium tracking-wide">Preparing protected stream...</span>
+              </div>
+            ) : (
+              <iframe
+                key={`${streamUrl}-${playerKey}-${adBlockLevel}-${useShieldProxy}`}
+                id="cinestream-player-frame"
+                src={streamUrl}
+                title={`${title} Stream Player`}
+                className="absolute inset-0 w-full h-full border-0 bg-black"
+                allowFullScreen
+                allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                referrerPolicy="origin"
+                sandbox={
+                  useShieldProxy
+                    ? 'allow-scripts allow-presentation allow-pointer-lock allow-forms'
+                    : adBlocker.getIframeSandboxAttributes() || 'allow-scripts allow-same-origin allow-presentation allow-pointer-lock allow-forms'
+                }
+              />
+            )}
           </>
 
           {/* Simple Up Next Button Prompt */}
