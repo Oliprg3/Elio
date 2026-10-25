@@ -5,24 +5,32 @@ import android.app.Activity;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.widget.FrameLayout;
 
 /**
  * elio+ native shell.
  *
  * Serves the bundled web build (assets/app/) from a privacy-first loopback
  * HTTP server (127.0.0.1 only) and renders it in a fullscreen WebView.
- * Auto-detects Android TV / Leanback devices and boots the UI in TV mode (?tv=1).
+ * Auto-detects Android TV / Leanback devices and boots the UI in TV mode (?tv=1),
+ * which renders the exact desktop/tablet layout scaled to fill the screen.
  * Works on phones & tablets too (regular launcher).
  */
 public class MainActivity extends Activity {
 
-    private WebView mWebView;
+    WebView mWebView;
     private LocalAssetServer mServer;
     private boolean mIsTV;
+
+    // Fullscreen player support (HTML5 custom view from the stream iframe)
+    private FrameLayout mShellLayout;
+    private View mCustomView;
+    private WebChromeClient.CustomViewCallback mCustomViewCallback;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -42,21 +50,36 @@ public class MainActivity extends Activity {
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(false);
-        s.setLoadWithOverviewMode(false);
-        s.setUseWideViewPort(false);
+        // Honor the page's viewport meta so the app controls its own layout:
+        // TVs boot with width=1280 (the PC/tablet canvas) scaled to fill the
+        // screen instead of the device's raw CSS width which can be far too
+        // narrow and breaks the responsive desktop layout under a remote.
+        s.setUseWideViewPort(true);
+        s.setLoadWithOverviewMode(true);
         s.setSupportMultipleWindows(false);
         s.setJavaScriptCanOpenWindowsAutomatically(false);
         s.setAllowFileAccess(false);
         s.setAllowContentAccess(false);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         s.setNeedInitialFocus(false);
+        try {
+            String ua = s.getUserAgentString();
+            if (ua != null && !ua.contains("elio-native-shell")) {
+                s.setUserAgentString(ua + " elio-native-shell");
+            }
+        } catch (Throwable ignored) {
+        }
 
-        mWebView.setWebChromeClient(new WebChromeClient());
+        mWebView.setWebChromeClient(new FullscreenChromeClient(this));
         mWebView.setWebViewClient(new AppWebViewClient());
         // Sideloads triggered from inside the app (e.g. the "Get App" entry on TV)
         mWebView.setDownloadListener(new APKDownloadListener(this));
 
-        setContentView(mWebView);
+        mShellLayout = new FrameLayout(this);
+        mShellLayout.addView(mWebView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        setContentView(mShellLayout);
 
         mServer = new LocalAssetServer(this);
         mServer.start();
@@ -77,6 +100,47 @@ public class MainActivity extends Activity {
         } catch (Throwable t) {
             return false;
         }
+    }
+
+    boolean isCustomViewShown() {
+        return mCustomView != null;
+    }
+
+    void handleShowCustomView(View view, WebChromeClient.CustomViewCallback callback) {
+        if (mCustomView != null) {
+            try {
+                callback.onCustomViewHidden();
+            } catch (Throwable ignored) {
+            }
+            return;
+        }
+        mCustomView = view;
+        mCustomViewCallback = callback;
+        mCustomView.setVisibility(View.VISIBLE);
+        mShellLayout.addView(view, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        mWebView.setVisibility(View.GONE);
+        applyImmersive();
+    }
+
+    void handleHideCustomView() {
+        if (mCustomView == null) {
+            return;
+        }
+        mShellLayout.removeView(mCustomView);
+        mCustomView.setVisibility(View.GONE);
+        mCustomView = null;
+        mWebView.setVisibility(View.VISIBLE);
+        WebChromeClient.CustomViewCallback cb = mCustomViewCallback;
+        mCustomViewCallback = null;
+        if (cb != null) {
+            try {
+                cb.onCustomViewHidden();
+            } catch (Throwable ignored) {
+            }
+        }
+        applyImmersive();
     }
 
     private void applyImmersive() {
@@ -100,10 +164,25 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (mWebView != null && mWebView.canGoBack()) {
-            mWebView.goBack();
-        } else {
+        if (mCustomView != null) {
+            handleHideCustomView();
+            return;
+        }
+        if (mWebView == null) {
             super.onBackPressed();
+            return;
+        }
+        // Ask the web app first: modals and the streaming screen consume the
+        // Back key (window.__elioTvBack). Otherwise walk native history/exit.
+        try {
+            String js = "window.__elioTvBack ? window.__elioTvBack() : 'go'";
+            mWebView.evaluateJavascript(js, new BackDecision(this));
+        } catch (Throwable t) {
+            if (mWebView.canGoBack()) {
+                mWebView.goBack();
+            } else {
+                super.onBackPressed();
+            }
         }
     }
 

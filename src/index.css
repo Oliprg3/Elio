@@ -93,43 +93,40 @@
   animation: cinematicZoom 24s ease-in-out infinite;
 }
 
-/* TV Remote High-Contrast Styles */
+/* TV Remote High-Contrast Styles (desktop-tablet parity layout) */
 .is-tv-app {
   user-select: none !important;
-  font-size: 104%;
   scroll-behavior: smooth;
-  scroll-padding: 3rem;
 }
 
-.is-tv-app main,
-.is-tv-app #root {
-  padding-left: 1.5rem;
-  padding-right: 1.5rem;
-}
-
+/* Focus ring mirroring the hover layer used on PC so every hover affordance
+   that a remote cannot trigger is still discoverable while navigating */
 .is-tv-app button:focus,
 .is-tv-app a:focus,
 .is-tv-app input:focus,
 .is-tv-app select:focus,
 .is-tv-app [role="button"]:focus,
+.is-tv-app [role="option"]:focus,
 .is-tv-app [tabindex="0"]:focus,
 .is-tv-app [data-tv-focused="true"] {
   outline: 3px solid #ffffff !important;
-  outline-offset: 3px !important;
-  box-shadow: 0 0 30px rgba(255, 255, 255, 0.4), 0 0 10px rgba(255, 255, 255, 0.2) !important;
-  transform: scale(1.04) !important;
-  z-index: 50 !important;
-  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), outline 0.15s ease-out, box-shadow 0.15s ease-out !important;
+  outline-offset: 2px !important;
+  filter: brightness(1.18);
+  box-shadow: 0 0 24px rgba(255, 255, 255, 0.35), 0 0 10px rgba(255, 255, 255, 0.18) !important;
+  transition: filter 0.15s ease-out, box-shadow 0.15s ease-out !important;
 }
 
+/* Poster cards and primary tiles get the Android-style scale-up pop */
 .is-tv-app [data-card-id]:focus,
-.is-tv-app .group[tabindex="0"]:focus {
+.is-tv-app [data-card-id][data-tv-focused="true"],
+.is-tv-app nav button[data-tv-focused="true"] {
   transform: scale(1.06) !important;
   z-index: 45 !important;
+  transition: transform 0.16s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
-.is-tv-app button,
-.is-tv-app a,
-.is-tv-app [role="button"] {
-  min-height: 44px;
+/* Keep text inputs comfortable for remote keyboard input */
+.is-tv-app input:focus,
+.is-tv-app select:focus {
+  outline-offset: 0 !important;
 }

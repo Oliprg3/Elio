@@ -23,6 +23,16 @@ interface NavbarProps {
   onSearchQueryChange?: (query: string) => void;
 }
 
+const NATIVE_SHELL_UA_FLAG = 'elio-native-shell';
+
+function isNativeShell(): boolean {
+  try {
+    return navigator.userAgent.includes(NATIVE_SHELL_UA_FLAG);
+  } catch {
+    return false;
+  }
+}
+
 export const Navbar: React.FC<NavbarProps> = ({
   currentTab,
   onSelectTab,
@@ -31,6 +41,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   // "Get App (.apk)" entry only appears on TV devices
   const [isTV] = React.useState(() => detectIsTVDevice());
+  const [apkHref] = React.useState(() => (isNativeShell() ? '/__update__/elio-tv.apk' : '/elio-tv.apk'));
 
   // Left sidebar navigation items (Home, Search, Movies, Shows, etc.)
   const navItems: NavItem[] = [
@@ -43,7 +54,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'watchlist', label: 'My List', icon: Bookmark, badge: watchlistCount > 0 ? watchlistCount : undefined },
   ];
   if (isTV) {
-    navItems.push({ id: 'get-app', label: 'Get App', icon: MonitorPlay, href: '/elio-tv.apk' });
+    navItems.push({ id: 'get-app', label: 'Get App', icon: MonitorPlay, href: apkHref });
   }
 
   return (

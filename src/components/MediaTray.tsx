@@ -69,7 +69,7 @@ export const MediaTray: React.FC<MediaTrayProps> = ({
         </div>
 
         {/* Scroll Arrows */}
-        <div className="hidden sm:flex items-center gap-1.5 opacity-60 group-hover/tray:opacity-100 transition-opacity">
+        <div className="hidden sm:flex items-center gap-1.5 opacity-60 group-hover/tray:opacity-100 group-focus-within/tray:opacity-100 transition-opacity">
           <button
             onClick={() => handleScroll('left')}
             disabled={!canScrollLeft}

@@ -20,6 +20,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [adBlockLevel, setAdBlockLevel] = useState<AdBlockLevel>(adBlocker.getLevel());
   const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [savedAlert, setSavedAlert] = useState(false);
+  const [apkHref] = useState(() =>
+    navigator.userAgent.includes('elio-native-shell')
+      ? '/__update__/elio-tv.apk'
+      : '/elio-tv.apk'
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -199,7 +204,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </p>
               <div className="flex items-center gap-2">
                 <a
-                  href="/elio-tv.apk"
+                  href={apkHref}
                   download="elio-tv.apk"
                   id="download-apk-btn"
                   className="flex-1 py-2 bg-white hover:bg-zinc-200 text-zinc-950 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"

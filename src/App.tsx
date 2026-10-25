@@ -43,10 +43,6 @@ interface WatchRoute {
 }
 
 export default function App() {
-  if (typeof window !== 'undefined') {
-    localStorage.removeItem('elio_tv_mode');
-    adBlocker.init();
-  }
   const [currentTab, setCurrentTab] = useState<string>('home');
   const [watchRoute, setWatchRoute] = useState<WatchRoute | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -105,13 +101,18 @@ export default function App() {
           type: qType,
           id: parseInt(qId, 10),
         });
+        return;
       }
+
+      // Any non-watch URL (including browser/remote Back) exits the player.
+      setWatchRoute((prev) => (prev ? null : prev));
+      refreshStorageData();
     };
 
     parseUrl();
     window.addEventListener('popstate', parseUrl);
     return () => window.removeEventListener('popstate', parseUrl);
-  }, []);
+  }, [refreshStorageData]);
 
   // High-performance Staged / Progressive Catalogue Loading
   const loadHomeCatalog = useCallback(() => {
@@ -150,9 +151,21 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    adBlocker.init();
+  }, []);
+
+  useEffect(() => {
     loadHomeCatalog();
     refreshStorageData();
   }, [loadHomeCatalog, refreshStorageData]);
+
+  // On TV devices land the remote focus on the first usable element
+  useEffect(() => {
+    if (tvNav.getIsTV()) {
+      const raf = requestAnimationFrame(() => tvNav.focusFirstAvailableElement());
+      return () => cancelAnimationFrame(raf);
+    }
+  }, []);
 
   // Handle Android TV remote Back key hierarchically
   useEffect(() => {
@@ -172,14 +185,14 @@ export default function App() {
       if (watchRoute) {
         setWatchRoute(null);
         if (window.location.pathname !== '/') {
-          window.history.pushState({}, '', '/');
+          window.history.replaceState({}, '', '/');
         }
         return true;
       }
       if (currentTab !== 'home') {
         setCurrentTab('home');
         if (window.location.pathname !== '/') {
-          window.history.pushState({}, '', '/');
+          window.history.replaceState({}, '', '/');
         }
         return true;
       }

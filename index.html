@@ -3,6 +3,33 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      /* Pre-paint TV mode: force the exact desktop/tablet layout canvas
+         (width=1280 scaled to fit) so TVs never fall into narrow-viewport
+         phone layouts, and paint it without a flash. */
+      (function () {
+        try {
+          var ua = navigator.userAgent || '';
+          var isTV =
+            /Android.*(TV|SmartTV|LargeScreen)|Leanback|BRAVIA|\bAFT[A-Z0-9]*\b|GoogleTV|HbbTV|Tizen|Web0S|Roku|AppleTV|MiTV|Shield.*Android/i.test(ua);
+          try {
+            var qp = new URLSearchParams(window.location.search);
+            isTV = isTV || qp.get('tv') === '1' || qp.get('tv') === 'true' || qp.get('mode') === 'tv' || qp.get('android_tv') === '1';
+          } catch (e) {}
+          if (isTV) {
+            var meta = document.querySelector('meta[name="viewport"]');
+            if (!meta) {
+              meta = document.createElement('meta');
+              meta.name = 'viewport';
+              document.head.appendChild(meta);
+            }
+            meta.setAttribute('data-default-content', meta.getAttribute('content') || 'width=device-width, initial-scale=1.0');
+            meta.setAttribute('content', 'width=1280, viewport-fit=cover, user-scalable=no, maximum-scale=1');
+            document.documentElement.classList.add('is-tv-app');
+          }
+        } catch (e) {}
+      })();
+    </script>
     <title>elio+ • Watch Movies & Shows</title>
     <meta name="description" content="Stream high-definition movies and shows on elio+ with instant playback and intelligent series tracking." />
     <meta name="theme-color" content="#000000" />

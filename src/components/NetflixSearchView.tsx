@@ -477,6 +477,14 @@ export const NetflixSearchView: React.FC<NetflixSearchViewProps> = ({
                 {recentSearches.map((term) => (
                   <div
                     key={term}
+                    tabIndex={0}
+                    role="button"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleSelectRecent(term);
+                      }
+                    }}
                     onClick={() => handleSelectRecent(term)}
                     className="group px-3.5 py-1.5 rounded-full bg-zinc-900/60 hover:bg-zinc-800/80 text-xs text-zinc-300 hover:text-white border border-white/[0.06] hover:border-white/20 flex items-center gap-2 cursor-pointer transition-all duration-200"
                   >
@@ -515,6 +523,19 @@ export const NetflixSearchView: React.FC<NetflixSearchViewProps> = ({
                       key={item.id}
                       whileHover={{ scale: 1.015 }}
                       transition={{ duration: 0.2 }}
+                      tabIndex={0}
+                      role="button"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          if (!status.isReleased) {
+                            if (onUnreleased) onUnreleased(item);
+                            else onInfo(item);
+                            return;
+                          }
+                          onPlay(type as 'movie' | 'tv', item.id);
+                        }
+                      }}
                       onClick={() => {
                         if (!status.isReleased) {
                           if (onUnreleased) onUnreleased(item);
@@ -547,7 +568,7 @@ export const NetflixSearchView: React.FC<NetflixSearchViewProps> = ({
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                           loading="lazy"
                         />
-                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 flex items-center justify-center transition-opacity">
                           <div className="w-7 h-7 rounded-full bg-white text-zinc-900 flex items-center justify-center shadow-lg">
                             <PlaySolid className="w-3.5 h-3.5 ml-0.5" />
                           </div>

@@ -5,6 +5,7 @@ import { TMDBMedia } from '../types/tmdb';
 import { getPosterUrl, getProxiedImageUrl, getBackdropUrl, normalizeImagePath } from '../services/tmdb';
 import { isItemInWatchlist, addToWatchlist, removeFromWatchlist } from '../services/storage';
 import { getMediaReleaseStatus } from '../services/releaseStatus';
+import { detectIsTVDevice } from '../services/tvNavigation';
 
 interface MediaCardProps {
   item: TMDBMedia;
@@ -31,6 +32,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({
 }) => {
   const [inWatchlist, setInWatchlist] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [isTV] = useState(() => detectIsTVDevice());
 
   useEffect(() => {
     setInWatchlist(isItemInWatchlist(item.id));
@@ -71,16 +73,18 @@ export const MediaCard: React.FC<MediaCardProps> = ({
       tabIndex={0}
       data-card-id={item.id}
       role="button"
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          handleCardClick();
-        }
-      }}
       whileHover={{ y: -6, scale: 1.02 }}
       transition={{ duration: 0.25, ease: 'easeOut' }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      onFocusCapture={() => setIsHovered(true)}
+      onBlurCapture={() => setIsHovered(false)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          if (e.target === e.currentTarget) handleCardClick();
+        }
+      }}
       onClick={handleCardClick}
       className={`group relative cursor-pointer select-none focus:outline-none ${className}`}
     >
@@ -146,7 +150,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({
           <div className="flex items-center justify-between w-full pointer-events-auto">
             <button
               type="button"
-              tabIndex={-1}
+              tabIndex={isTV ? 0 : -1}
               onClick={handleWatchlistClick}
               title={inWatchlist ? 'Remove from My List' : 'Add to My List'}
               className={`w-7 h-7 rounded-full flex items-center justify-center border backdrop-blur-xl transition-all cursor-pointer ${
@@ -160,7 +164,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({
 
             <button
               type="button"
-              tabIndex={-1}
+              tabIndex={isTV ? 0 : -1}
               onClick={(e) => {
                 e.stopPropagation();
                 onInfo(item);

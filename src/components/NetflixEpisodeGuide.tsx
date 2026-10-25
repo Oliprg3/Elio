@@ -240,6 +240,15 @@ export const NetflixEpisodeGuide: React.FC<NetflixEpisodeGuideProps> = ({
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: Math.min(0.2, idx * 0.02) }}
                     id={`netflix-episode-row-${ep.episode_number}`}
+                    tabIndex={0}
+                    role="button"
+                    aria-pressed={isCurrent}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onSelectEpisode(ep.episode_number);
+                      }
+                    }}
                     onClick={() => onSelectEpisode(ep.episode_number)}
                     className={`group relative rounded-2xl p-3 sm:p-4 transition-all duration-150 cursor-pointer flex flex-col sm:flex-row items-start sm:items-center gap-4 border ${
                       isCurrent
@@ -271,7 +280,7 @@ export const NetflixEpisodeGuide: React.FC<NetflixEpisodeGuideProps> = ({
 
                       {/* Play Hover Overlay */}
                       <div className={`absolute inset-0 flex items-center justify-center transition-opacity ${
-                        isCurrent ? 'bg-black/50 opacity-100' : 'bg-black/40 opacity-0 group-hover:opacity-100'
+                        isCurrent ? 'bg-black/50 opacity-100' : 'bg-black/40 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
                       }`}>
                         <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-lg transition-transform group-hover:scale-110 bg-white text-zinc-900">
                           <Play className="w-4 h-4 fill-current ml-0.5" />
@@ -371,6 +380,15 @@ export const NetflixEpisodeGuide: React.FC<NetflixEpisodeGuideProps> = ({
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ delay: Math.min(0.2, idx * 0.02) }}
                     id={`netflix-episode-grid-${ep.episode_number}`}
+                    tabIndex={0}
+                    role="button"
+                    aria-pressed={isCurrent}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onSelectEpisode(ep.episode_number);
+                      }
+                    }}
                     onClick={() => onSelectEpisode(ep.episode_number)}
                     className={`group rounded-2xl p-3.5 transition-all duration-150 cursor-pointer flex flex-col justify-between border ${
                       isCurrent

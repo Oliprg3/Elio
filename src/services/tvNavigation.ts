@@ -8,30 +8,51 @@ export interface TVModeState {
   isRemoteNavigating: boolean;
 }
 
-const TV_UA_REGEX = /Android.*(TV|SmartTV|LargeScreen)|Leanback|BRAVIA|\b(AFTT|AFTB|AFTM|AFT)\b|GoogleTV|HbbTV|Tizen|Web0S|Roku|AppleTV|MiTV|Shield.*Android/i;
+const TV_UA_REGEX = /Android.*(TV|SmartTV|LargeScreen)|Leanback|BRAVIA|\bAFT[A-Z0-9]*\b|GoogleTV|HbbTV|Tizen|Web0S|Roku|AppleTV|MiTV|Shield.*Android/i;
 
-/**
- * Detects if current environment is an Android TV / Smart TV / Leanback device
- */
+/** The desktop layout width every TV renders at, scaled to fill the screen */
+export const TV_DESIGN_WIDTH = 1280;
+
+const DEFAULT_VIEWPORT = 'width=device-width, initial-scale=1.0';
+const TV_VIEWPORT = `width=${TV_DESIGN_WIDTH}, viewport-fit=cover, user-scalable=no, maximum-scale=1`;
+
 export function detectIsTVDevice(): boolean {
   if (typeof window === 'undefined') return false;
 
-  // 1. Explicit URL parameter (e.g., ?tv=1, ?mode=tv)
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.get('tv') === '1' || urlParams.get('tv') === 'true' || urlParams.get('mode') === 'tv' || urlParams.get('android_tv') === '1') {
     return true;
   }
 
-  // 2. User preference in localStorage
-  
-
-  // 3. User-Agent Detection for Android TV / Leanback
   const ua = navigator.userAgent || '';
   if (TV_UA_REGEX.test(ua)) {
     return true;
   }
 
   return false;
+}
+
+/**
+ * Keeps the viewport meta in sync with TV mode. On TV the app renders a
+ * fixed desktop-width canvas (identical to opening it on a PC or tablet)
+ * and the device scales it to fill the screen, so the layout never falls
+ * back to the phone/columnar variant on TVs that expose narrow viewports.
+ */
+function syncTVViewport(enabled: boolean) {
+  if (typeof document === 'undefined') return;
+  let meta = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
+  if (!meta) {
+    meta = document.createElement('meta');
+    meta.name = 'viewport';
+    document.head.appendChild(meta);
+  }
+  const previous = meta.getAttribute('data-default-content');
+  if (previous) {
+    meta.setAttribute('data-default-content', previous);
+  } else {
+    meta.setAttribute('data-default-content', meta.content || DEFAULT_VIEWPORT);
+  }
+  meta.content = enabled ? TV_VIEWPORT : meta.getAttribute('data-default-content') || DEFAULT_VIEWPORT;
 }
 
 class SpatialNavigationManager {
@@ -48,7 +69,14 @@ class SpatialNavigationManager {
       if (this.isTV) {
         this.startListening();
       }
+      this.exposeNativeBackBridge();
     }
+  }
+
+  /** Lets the native Android shell ask the app if the Back key has work to do */
+  private exposeNativeBackBridge() {
+    const w = window as unknown as { __elioTvBack?: () => string };
+    w.__elioTvBack = () => (this.handleBackRequest() ? 'yes' : 'no');
   }
 
   public getIsTV(): boolean {
@@ -57,7 +85,7 @@ class SpatialNavigationManager {
 
   public setTVMode(enabled: boolean) {
     this.isTV = enabled;
-    
+
     this.applyTVClass(enabled);
 
     if (enabled) {
@@ -96,6 +124,7 @@ class SpatialNavigationManager {
 
   private applyTVClass(enabled: boolean) {
     if (typeof document === 'undefined') return;
+    syncTVViewport(enabled);
     if (enabled) {
       document.body.classList.add('is-tv-app');
       document.documentElement.classList.add('is-tv-app');
@@ -134,9 +163,20 @@ class SpatialNavigationManager {
     }
   };
 
+  private isElementVisible(el: HTMLElement): boolean {
+    if (el.getAttribute('aria-hidden') === 'true') return false;
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return false;
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+      return false;
+    }
+    return true;
+  }
+
   private getFocusableCandidates(): HTMLElement[] {
     const root: Document | HTMLElement = document;
-    
+
     // Check if an open modal exists to trap focus inside it
     const openModals = Array.from(document.querySelectorAll<HTMLElement>('.fixed.inset-0.z-50, [role="dialog"]'));
     const visibleModal = openModals.find((m) => {
@@ -154,77 +194,92 @@ class SpatialNavigationManager {
       '[tabindex="0"]',
       '[data-nav-item]',
       '[data-card-id]',
-      '[role="button"]'
+      '[role="button"]',
+      '[role="option"]',
+      '[role="menuitem"]'
     ].join(', ');
 
     const elements = Array.from(scope.querySelectorAll<HTMLElement>(selector));
-
-    return elements.filter((el) => {
-      if (el.getAttribute('aria-hidden') === 'true') return false;
-      const rect = el.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return false;
-      
-      const style = window.getComputedStyle(el);
-      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
-        return false;
-      }
-      return true;
-    });
+    return elements.filter((el) => this.isElementVisible(el));
   }
 
   public focusFirstAvailableElement() {
     const candidates = this.getFocusableCandidates();
-    if (candidates.length > 0) {
-      this.focusElement(candidates[0]);
+    if (candidates.length === 0) return;
+
+    const viewport = { left: 0, right: window.innerWidth, top: 0, bottom: window.innerHeight };
+    const onScreen = candidates.filter((el) => {
+      const rect = el.getBoundingClientRect();
+      return rect.right > viewport.left && rect.left < viewport.right && rect.bottom > viewport.top && rect.top < viewport.bottom;
+    });
+    const pool = onScreen.length > 0 ? onScreen : candidates;
+    const midY = (viewport.top + viewport.bottom) / 2;
+    let chosen = pool[0];
+    let bestDist = Infinity;
+    for (const el of pool) {
+      const rect = el.getBoundingClientRect();
+      const centerY = rect.top + rect.height / 2;
+      const dist = Math.abs(centerY - midY);
+      if (dist < bestDist) {
+        bestDist = dist;
+        chosen = el;
+      }
     }
+    this.focusElement(chosen);
   }
 
-  private focusElement(el: HTMLElement) {
+  public focusElement(el: HTMLElement) {
     this.clearTVFocusAttributes();
     el.setAttribute('data-tv-focused', 'true');
     el.focus({ preventScroll: true });
+    this.ensureOnScreen(el);
+  }
 
-    // Smooth scroll into view vertically and horizontally
+  /** Manually walks scrollable ancestors so smooth single-source scrolling */
+  private ensureOnScreen(el: HTMLElement) {
     try {
-      el.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center',
-        inline: 'center',
-      });
-
-      // Also scroll parent horizontal containers smoothly
       let parent = el.parentElement;
       while (parent && parent !== document.body) {
         const style = window.getComputedStyle(parent);
-        const overflowX = style.overflowX;
-        if ((overflowX === 'auto' || overflowX === 'scroll') && parent.scrollWidth > parent.clientWidth) {
+        const canX = (style.overflowX === 'auto' || style.overflowX === 'scroll') && parent.scrollWidth > parent.clientWidth + 4;
+        const canY = (style.overflowY === 'auto' || style.overflowY === 'scroll') && parent.scrollHeight > parent.clientHeight + 4;
+        if (canX || canY) {
           const elRect = el.getBoundingClientRect();
           const parentRect = parent.getBoundingClientRect();
-          const elCenter = elRect.left + elRect.width / 2;
-          const parentCenter = parentRect.left + parentRect.width / 2;
-          const diff = elCenter - parentCenter;
-
-          parent.scrollBy({
-            left: diff,
-            behavior: 'smooth',
-          });
-          break;
+          if (canX) {
+            const target = parent.scrollLeft + (elRect.left + elRect.right - parentRect.left - parentRect.right) / 2;
+            parent.scrollTo({ left: Math.max(0, Math.min(parent.scrollWidth, target)), behavior: 'smooth' });
+          }
+          if (canY) {
+            const target = parent.scrollTop + (elRect.top + elRect.bottom - parentRect.top - parentRect.bottom) / 2;
+            parent.scrollTo({ top: Math.max(0, Math.min(parent.scrollHeight, target)), behavior: 'smooth' });
+          }
         }
         parent = parent.parentElement;
       }
+
+      const rect = el.getBoundingClientRect();
+      const margin = Math.max(72, window.innerHeight * 0.12);
+      let scrollY = 0;
+      if (rect.top < margin) {
+        scrollY = rect.top - margin;
+      } else if (rect.bottom > window.innerHeight - margin) {
+        scrollY = rect.bottom - window.innerHeight + margin;
+      }
+      if (scrollY !== 0) {
+        window.scrollBy({ top: scrollY, behavior: 'smooth' });
+      }
     } catch {
-      el.scrollIntoView();
+      el.scrollIntoView({ block: 'nearest' });
     }
   }
 
   private handleKeyDown = (e: KeyboardEvent) => {
-    // Only execute if TV mode is active
     if (!this.isTV) return;
 
     const key = e.key;
     const keyCode = e.keyCode;
 
-    // 1. D-Pad Directional Navigation
     const isArrowUp = key === 'ArrowUp' || keyCode === 38;
     const isArrowDown = key === 'ArrowDown' || keyCode === 40;
     const isArrowLeft = key === 'ArrowLeft' || keyCode === 37;
@@ -244,21 +299,20 @@ class SpatialNavigationManager {
       return;
     }
 
-    // 2. D-Pad OK / Select / Enter
-    const isEnter = key === 'Enter' || keyCode === 13 || keyCode === 18 || key === 'Select';
+    const activeTag = (document.activeElement?.tagName || '').toUpperCase();
+    const isTyping =
+      activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT';
+
+    const isEnter = key === 'Enter' || keyCode === 13 || keyCode === 23 || key === 'Select';
     if (isEnter) {
       const active = document.activeElement as HTMLElement;
-      if (active && active !== document.body) {
-        // If it's not a text input submit, simulate natural click
-        if (active.tagName !== 'INPUT' || (active as HTMLInputElement).type === 'button') {
-          e.preventDefault();
-          active.click();
-        }
+      if (active && active !== document.body && !(activeTag === 'INPUT' && (active as HTMLInputElement).type !== 'button')) {
+        e.preventDefault();
+        active.click();
       }
       return;
     }
 
-    // 3. Android TV Remote Back Key (KeyCodes: 4 = Android Back, 27 = Escape, 8 = Backspace)
     const isBack =
       key === 'Escape' ||
       key === 'Back' ||
@@ -266,37 +320,39 @@ class SpatialNavigationManager {
       key === 'BrowserBack' ||
       keyCode === 4 ||
       keyCode === 27 ||
-      (keyCode === 8 && (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA'));
+      (keyCode === 8 && !isTyping);
 
     if (isBack) {
       e.preventDefault();
 
-      // Check registered custom back handlers in reverse order (LIFO)
-      for (let i = this.onBackCallbacks.length - 1; i >= 0; i--) {
-        const handled = this.onBackCallbacks[i]();
-        if (handled) return;
+      if (this.handleBackRequest()) return;
+
+      if (document.body.classList.contains('is-tv-app')) {
+        const firstNavBtn = document.querySelector<HTMLElement>('#main-sidebar button, nav button, nav a');
+        if (firstNavBtn) {
+          this.focusElement(firstNavBtn);
+          return;
+        }
       }
 
-      // Check for any open modal close buttons
-      const closeBtn = document.querySelector<HTMLElement>('.fixed.inset-0.z-50 button, [role="dialog"] button');
-      if (closeBtn) {
-        closeBtn.click();
-        return;
-      }
-
-      // If in Watch view, trigger back button
-      const watchBackBtn = document.querySelector<HTMLElement>('#watch-back-btn, button[title="Back to Browse"]');
-      if (watchBackBtn) {
-        watchBackBtn.click();
-        return;
-      }
-
-      // Fallback: Focus top navigation
-      const firstNavBtn = document.querySelector<HTMLElement>('nav button, nav a');
-      if (firstNavBtn) {
-        this.focusElement(firstNavBtn);
-      }
+      window.history.back();
     }
+  };
+
+  /** Shared Back pipeline: app handlers first, then any open modal's close button. */
+  public handleBackRequest(): boolean {
+    for (let i = this.onBackCallbacks.length - 1; i >= 0; i--) {
+      const handled = this.onBackCallbacks[i]();
+      if (handled) return true;
+    }
+
+    const closeBtn = document.querySelector<HTMLElement>('.fixed.inset-0.z-50 button, [role="dialog"] button');
+    if (closeBtn) {
+      closeBtn.click();
+      return true;
+    }
+
+    return false;
   };
 
   private navigateDirection(direction: 'up' | 'down' | 'left' | 'right') {
@@ -304,9 +360,8 @@ class SpatialNavigationManager {
     if (candidates.length === 0) return;
 
     let current = document.activeElement as HTMLElement | null;
-    if (!current || !candidates.includes(current) || current === document.body) {
-      // Find candidate closest to current scroll position or first candidate
-      this.focusElement(candidates[0]);
+    if (!current || current === document.body || !candidates.includes(current)) {
+      this.focusFirstAvailableElement();
       return;
     }
 
@@ -359,7 +414,6 @@ class SpatialNavigationManager {
       }
 
       if (isCandidateInDirection) {
-        // Weighted Manhattan Distance with orthogonal penalty to favor direct inline elements
         const score = primaryDiff + orthogonalDiff * 2.2;
         if (score < minDistance) {
           minDistance = score;
@@ -370,6 +424,12 @@ class SpatialNavigationManager {
 
     if (bestCandidate) {
       this.focusElement(bestCandidate);
+      return;
+    }
+
+    if (direction === 'down' || direction === 'up') {
+      const step = Math.round(window.innerHeight * 0.7);
+      window.scrollBy({ top: direction === 'down' ? step : -step, behavior: 'smooth' });
     }
   }
 }
