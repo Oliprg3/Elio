@@ -118,6 +118,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
             <p className="text-[11px] text-zinc-400 leading-relaxed">
               Actively intercepts and neutralizes unwanted pop-ups, pop-unders, and ad redirects while preserving full high-definition video playback.
+              Strict blocks every popup attempt, including flood waves fired on minimize, fullscreen or page transitions.
+              Standard still blocks known ad hosts and deferred popunders, only allowing windows opened directly by your own clicks.
+              Disabled removes heuristics but keeps a hard block on proven ad domains and script-injection URLs.
             </p>
 
             <div className="grid grid-cols-3 gap-2 pt-1">

@@ -102,6 +102,25 @@ export const KNOWN_AD_DOMAINS = [
   'spotxchange.com',
   'undertone.com',
   'yieldmo.com',
+  'googlesyndication.com',
+  'amazon-adsystem.com',
+  'applovin.com',
+  'chartboost.com',
+  'vungle.com',
+  'ironsrc.com',
+  'adcolony.com',
+  'unityads.unity3d.com',
+  '33across.com',
+  'dotomi.com',
+  'clickagy.com',
+  'onetag.com',
+  'maxbidding.com',
+  'pushcrew.com',
+  'izooto.com',
+  'pushnews.in',
+  'sibautomation.com',
+  'claimreward',
+  'reward-giveaway',
 ];
 
 const AD_KEYWORDS = [
@@ -124,6 +143,35 @@ const AD_KEYWORDS = [
   'popup-ad',
 ];
 
+// Popunder networks overwhelmingly use cheap disposable TLDs and telltale redirect paths
+const POPUP_SUSPECT_TLDS = [
+  '.cyou',
+  '.sbs',
+  '.top',
+  '.click',
+  '.xyz',
+  '.icu',
+  '.buzz',
+  '.monster',
+  '.rest',
+  '.fun',
+  '.link',
+  '.cam',
+  '.sur',
+];
+
+const POPUP_SUSPECT_PATHS = [
+  'click.php',
+  'aff.php',
+  '/go/',
+  '/goto',
+  '/redirect',
+  '/rlink',
+  'outbound',
+  'get-affiliate',
+  'utm_campaign=popunder',
+];
+
 class AdBlockerEngine {
   private level: AdBlockLevel = 'strict';
   private stats: AdBlockStats = {
@@ -138,6 +186,9 @@ class AdBlockerEngine {
   private lastLogTime = 0;
   private suppressionUntil = 0;
   private lastBlurTime = 0;
+  private lastUserGestureTime = 0;
+  private burstCount = 0;
+  private burstWindowStart = 0;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -178,6 +229,71 @@ class AdBlockerEngine {
       if (AD_KEYWORDS.some((kw) => lower.includes(kw))) return true;
     }
     return false;
+  }
+
+  /**
+   * Aggressive popup-target scoring used to judge window.open targets:
+   * known ad domain list, cheap disposable TLDs skewing towards popunder
+   * landfills, and telltale ad-redirect URL paths.
+   */
+  public looksLikeAdUrl(testUrl: string): boolean {
+    if (!testUrl) return false;
+    if (this.isAdDomain(testUrl)) return true;
+    try {
+      const url = new URL(testUrl, window.location.href);
+      const host = url.hostname.toLowerCase();
+      if (POPUP_SUSPECT_TLDS.some((tld) => host.endsWith(tld))) {
+        return true;
+      }
+      const path = (url.pathname + url.search).toLowerCase();
+      if (POPUP_SUSPECT_PATHS.some((p) => path.includes(p))) {
+        return true;
+      }
+    } catch (_) {
+      const lower = testUrl.toLowerCase();
+      if (POPUP_SUSPECT_TLDS.some((tld) => lower.includes(tld))) return true;
+      if (POPUP_SUSPECT_PATHS.some((p) => lower.includes(p))) return true;
+    }
+    return false;
+  }
+
+  /** Records when a genuine user interaction happened. Popunders usually fire
+   * long after the user's click, so a stale gesture means the call is a popup. */
+  private markUserGesture() {
+    this.lastUserGestureTime = Date.now();
+  }
+
+  public isUserGestureRecent(maxAgeMs = 1500): boolean {
+    return Date.now() - this.lastUserGestureTime <= maxAgeMs;
+  }
+
+  /**
+   * Shared bookkeeping for every blocked popup attempt: throttled logging,
+   * stats, UI event and flood detection. Popup networks fire their queued
+   * popunders in bursts; once a burst is detected the suppression window is
+   * slammed shut for a longer period.
+   */
+  private registerBlockedAttempt(targetUrl: string, reason: string) {
+    const now = Date.now();
+    if (now - this.burstWindowStart > 3000) {
+      this.burstWindowStart = now;
+      this.burstCount = 0;
+    }
+    this.burstCount++;
+    if (this.burstCount >= 4) {
+      this.suppressionUntil = Math.max(this.suppressionUntil, now + 15000);
+      console.info('🛡️ [AdBlocker] Popup flood detected — suppression extended to 15s');
+    }
+    if (now - this.lastLogTime > 2000) {
+      this.lastLogTime = now;
+      console.info('🛡️ [AdBlocker] Blocked popup attempt (' + reason + '):', targetUrl || 'unnamed');
+    }
+    this.recordBlockedPopup();
+    window.dispatchEvent(
+      new CustomEvent('elio:adblock:popup-blocked', {
+        detail: { url: targetUrl, reason, timestamp: now },
+      })
+    );
   }
 
   /**
@@ -224,22 +340,44 @@ class AdBlockerEngine {
     const interceptOpen = (...args: Parameters<typeof window.open>): Window | null => {
       const now = Date.now();
       const isSuppressed = now < this.suppressionUntil;
+      const targetUrl = args[0] ? String(args[0]) : '';
+      const isAdTarget = targetUrl ? this.looksLikeAdUrl(targetUrl) : false;
+      const isKnownAd = targetUrl ? this.isAdDomain(targetUrl) : false;
+      const isUnsafeScheme = /^(javascript|data|vbscript):/i.test(targetUrl);
 
-      if (this.level !== 'off' || isSuppressed) {
-        const targetUrl = args[0] ? String(args[0]) : '';
-        if (now - this.lastLogTime > 2000) {
-          this.lastLogTime = now;
-          console.info('🛡️ [AdBlocker] Blocked popup attempt (minimized/transition protected):', targetUrl || 'unnamed');
+      let block = false;
+      let reason = '';
+
+      if (isSuppressed) {
+        // Transition/burst protection window is active — zero tolerance
+        block = true;
+        reason = 'transition/burst suppression active';
+      } else if (this.level === 'strict') {
+        block = true;
+        reason = 'strict mode';
+      } else if (this.level === 'balanced') {
+        if (isAdTarget || isUnsafeScheme) {
+          block = true;
+          reason = 'ad/popup URL signature';
+        } else if (!this.isUserGestureRecent()) {
+          // Genuine user requests open within a split second of a gesture.
+          // Anything later is a queued/deferred popunder.
+          block = true;
+          reason = 'no recent user gesture (deferred popunder)';
         }
-        this.recordBlockedPopup();
+      } else {
+        // Level 'off': respect user choice, but still hard-block proven ad
+        // hosts and script-injection schemes
+        if (isKnownAd || isUnsafeScheme) {
+          block = true;
+          reason = 'known ad host — shield off override';
+        }
+      }
 
-        window.dispatchEvent(
-          new CustomEvent('elio:adblock:popup-blocked', {
-            detail: { url: targetUrl, timestamp: now },
-          })
-        );
-
-        // Return a mock window object so the ad script thinks the popup succeeded and does not trigger fallback redirects
+      if (block) {
+        this.registerBlockedAttempt(targetUrl, reason);
+        // Return a mock window object so the ad script thinks the popup
+        // succeeded and does not trigger fallback redirects
         return createMockWindow();
       }
 
@@ -274,6 +412,13 @@ class AdBlockerEngine {
     try {
       if (window.parent && window.parent !== window) installOpenTrap(window.parent);
     } catch (_) {}
+
+    // Track the last genuine user interaction. window.open calls that arrive
+    // well after this timestamp are popunders, not user-driven windows.
+    const gestureHandler = () => this.markUserGesture();
+    ['pointerdown', 'touchstart', 'mousedown', 'keydown', 'click'].forEach((evt) => {
+      window.addEventListener(evt, gestureHandler, { capture: true, passive: true });
+    });
 
     // 2. Intercept programmatic anchor clicks (e.g. ad scripts doing link.click())
     try {
@@ -392,6 +537,28 @@ class AdBlockerEngine {
       true
     );
 
+    // 5b. Intercept real user-submitted forms targeting a new tab/top
+    // (the prototype patch only catches programmatic .submit()/requestSubmit)
+    window.addEventListener(
+      'submit',
+      (event) => {
+        const isSuppressed = Date.now() < this.suppressionUntil;
+        if (this.level === 'off' && !isSuppressed) return;
+        const form = event.target as HTMLFormElement | null;
+        if (form && (form.target === '_blank' || form.target === '_top')) {
+          const isExplicitlyAllowed = Boolean(form.closest('[data-allow-external]'));
+          if (!isExplicitlyAllowed) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            this.recordBlockedPopup();
+            console.info('🛡️ [AdBlocker] Blocked form submission opening new context:', form.action);
+          }
+        }
+      },
+      true
+    );
+
     // 6. Fullscreen & Minimize Popunder Trap:
     // Ad scripts intentionally wait for `fullscreenchange` or `exitFullscreen` to trigger popunders.
     // Suppress all popups for 4 seconds upon any fullscreen state transition!
@@ -424,6 +591,27 @@ class AdBlockerEngine {
       },
       true
     );
+
+    // Popunder trap for mobile state transitions:
+    // Mobile browsers fire queued popunders right when the app is minimized
+    // (visibilitychange) AND right when the user returns to the page.
+    document.addEventListener(
+      'visibilitychange',
+      () => {
+        if (document.visibilityState === 'hidden') {
+          this.suppressNextPopups(5000);
+        } else {
+          this.suppressNextPopups(3000);
+        }
+        console.info('🛡️ [AdBlocker] Visibility transition protected (popunders suppressed)');
+      },
+      true
+    );
+
+    // Trap popunders fired on page exit / unload processing
+    const suppressOnExit = () => this.suppressNextPopups(3000);
+    window.addEventListener('pagehide', suppressOnExit, true);
+    window.addEventListener('beforeunload', suppressOnExit, true);
 
     // 8. Neutralize rogue window alerts or confirm boxes from ad scripts
     try {

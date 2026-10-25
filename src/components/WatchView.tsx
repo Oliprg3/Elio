@@ -96,6 +96,27 @@ export const WatchView: React.FC<WatchViewProps> = ({
     };
   }, []);
 
+  // Surface blocked popups to the user as a lightweight status chip
+  useEffect(() => {
+    let notifyTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastCount = adBlocker.getStats().popupsBlocked;
+
+    const handlePopupBlocked = () => {
+      const current = adBlocker.getStats().popupsBlocked;
+      const delta = Math.max(1, current - lastCount);
+      lastCount = current;
+      setPlayerNotification(delta > 1 ? `Shield blocked ${delta} popups` : 'Shield blocked ad popup');
+      if (notifyTimer) clearTimeout(notifyTimer);
+      notifyTimer = setTimeout(() => setPlayerNotification(null), 2200);
+    };
+
+    window.addEventListener('elio:adblock:popup-blocked', handlePopupBlocked);
+    return () => {
+      window.removeEventListener('elio:adblock:popup-blocked', handlePopupBlocked);
+      if (notifyTimer) clearTimeout(notifyTimer);
+    };
+  }, []);
+
   // Sync state instantly if type or id changes
   useEffect(() => {
     setMedia(getLocalMediaFallback(type, id));
@@ -302,6 +323,7 @@ export const WatchView: React.FC<WatchViewProps> = ({
 
   const handleNextEpisode = () => {
     if (!seasonData?.episodes) return;
+    adBlocker.suppressNextPopups(3000);
     const currentIndex = seasonData.episodes.findIndex((e) => e.episode_number === selectedEpisode);
     if (currentIndex < seasonData.episodes.length - 1) {
       setSelectedEpisode(seasonData.episodes[currentIndex + 1].episode_number);
@@ -325,6 +347,7 @@ export const WatchView: React.FC<WatchViewProps> = ({
 
   const handlePrevEpisode = () => {
     if (!seasonData?.episodes) return;
+    adBlocker.suppressNextPopups(3000);
     const currentIndex = seasonData.episodes.findIndex((e) => e.episode_number === selectedEpisode);
     if (currentIndex > 0) {
       setSelectedEpisode(seasonData.episodes[currentIndex - 1].episode_number);
@@ -340,6 +363,7 @@ export const WatchView: React.FC<WatchViewProps> = ({
   const handleQualityChange = (q: 'auto' | '1080p' | '4k' | '720p') => {
     setSelectedQuality(q);
     saveSettings({ qualityPreference: q });
+    adBlocker.suppressNextPopups(3000);
     setPlayerKey((k) => k + 1);
   };
 
@@ -546,6 +570,7 @@ export const WatchView: React.FC<WatchViewProps> = ({
             <button
               id="btn-reload-stream"
               onClick={() => {
+                adBlocker.suppressNextPopups(3500);
                 setPlayerKey((k) => k + 1);
                 setPlayerNotification('Player Refreshed');
                 setTimeout(() => setPlayerNotification(null), 2500);
@@ -560,8 +585,18 @@ export const WatchView: React.FC<WatchViewProps> = ({
 
             {/* Zero Pop-up Protection Shield Indicator */}
             <span className="text-[11px] font-medium text-zinc-400 bg-white/[0.04] px-2.5 py-1 rounded-full border border-white/[0.06] hidden md:flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-              <span>Shield Active</span>
+              <span
+                className={`w-1.5 h-1.5 rounded-full animate-pulse ${
+                  adBlockLevel === 'off' ? 'bg-amber-400' : 'bg-white'
+                }`}
+              />
+              <span>
+                {adBlockLevel === 'off'
+                  ? 'Shield Off'
+                  : adBlockLevel === 'strict'
+                  ? 'Shield Active'
+                  : 'Shield Standard'}
+              </span>
             </span>
 
             {playerNotification && (
@@ -624,6 +659,8 @@ export const WatchView: React.FC<WatchViewProps> = ({
         {/* Responsive 16:9 Aspect Ratio Video Player Container */}
         <div
           id="streaming-iframe-wrapper"
+          onPointerDown={() => adBlocker.suppressNextPopups(3000)}
+          onTouchStart={() => adBlocker.suppressNextPopups(3000)}
           className={`relative w-full aspect-video bg-black transition-all duration-300 ${
             isTheaterMode ? '' : 'rounded-b-2xl overflow-hidden border-x border-b border-white/[0.06] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.95)]'
           }`}
@@ -690,11 +727,13 @@ export const WatchView: React.FC<WatchViewProps> = ({
             setSelectedEpisode(1);
             setWatchedSeconds(0);
             setShowNextPrompt(false);
+            adBlocker.suppressNextPopups(3000);
           }}
           onSelectEpisode={(ep) => {
             setSelectedEpisode(ep);
             setWatchedSeconds(0);
             setShowNextPrompt(false);
+            adBlocker.suppressNextPopups(3000);
             window.scrollTo({
               top: playerContainerRef.current?.offsetTop ? playerContainerRef.current.offsetTop - 80 : 0,
               behavior: 'smooth',
