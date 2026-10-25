@@ -3,7 +3,7 @@ import { ProviderInfo, ProviderLogo } from './BrandHub';
 import { TMDBMedia } from '../types/tmdb';
 import { getByProvider } from '../services/tmdb';
 import { MediaCard } from './MediaCard';
-import { Film, Tv, X, Sparkles, Flame, CheckCircle2 } from 'lucide-react';
+import { Clapperboard, Tv, X, Sparkles, CheckCircle2 } from 'lucide-react';
 
 interface BrandShowcaseProps {
   provider: ProviderInfo;
@@ -138,7 +138,7 @@ export const BrandShowcase: React.FC<BrandShowcaseProps> = ({
                     : 'text-neutral-400 hover:text-white'
                 }`}
               >
-                <Film className="w-3.5 h-3.5" />
+                <Clapperboard className="w-3.5 h-3.5" />
                 Movies ({movies.length})
               </button>
             </div>
@@ -215,7 +215,7 @@ export const BrandShowcase: React.FC<BrandShowcaseProps> = ({
             <div>
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <Film className="w-4 h-4 text-white" />
+                  <Clapperboard className="w-4 h-4 text-white" />
                   <h3 className="text-lg font-bold text-white font-display">
                     {provider.name} Movies & Features
                   </h3>

@@ -7,7 +7,6 @@ import { MediaCard } from './MediaCard';
 interface MediaTrayProps {
   title: string;
   items: TMDBMedia[];
-  icon?: React.ComponentType<{ className?: string }>;
   onPlay: (type: 'movie' | 'tv', id: number) => void;
   onInfo: (item: TMDBMedia) => void;
   onUnreleased?: (item: TMDBMedia) => void;
@@ -19,7 +18,6 @@ interface MediaTrayProps {
 export const MediaTray: React.FC<MediaTrayProps> = ({
   title,
   items,
-  icon: Icon,
   onPlay,
   onInfo,
   onUnreleased,
@@ -64,9 +62,7 @@ export const MediaTray: React.FC<MediaTrayProps> = ({
       {/* Tray Header */}
       <div className="flex items-center justify-between mb-3.5">
         <div className="flex items-center gap-2.5">
-          {Icon && (
-            <Icon className="w-4 h-4 text-zinc-400 shrink-0" strokeWidth={1.5} />
-          )}
+          <span aria-hidden="true" className="w-1 h-4 md:h-5 bg-white rounded-sm shrink-0" />
           <h2 className="text-base sm:text-lg md:text-xl font-bold text-white font-display tracking-tight">
             {title}
           </h2>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DownloadCloud, Trash2, HardDrive, Play, ArrowDownToLine, Zap } from 'lucide-react';
+import { Download, Trash2, HardDrive, Play, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { DownloadedMedia } from '../types/tmdb';
 import { getDownloads, removeDownload } from '../services/storage';
@@ -42,7 +42,7 @@ export const DownloadsView: React.FC<DownloadsViewProps> = ({ onPlay, onBrowseMo
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white font-display tracking-tight flex items-center gap-2.5">
-            <DownloadCloud className="w-7 h-7 text-white" />
+            <Download className="w-7 h-7 text-white" />
             Downloads & Offline
           </h1>
           <p className="text-xs sm:text-sm text-zinc-400 mt-1">
@@ -64,7 +64,7 @@ export const DownloadsView: React.FC<DownloadsViewProps> = ({ onPlay, onBrowseMo
       {downloads.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center">
           <div className="flex items-center justify-center mb-4 text-zinc-400">
-            <DownloadCloud className="w-10 h-10 text-zinc-400" strokeWidth={1.5} />
+            <Download className="w-10 h-10 text-zinc-400" strokeWidth={1.5} />
           </div>
           <h3 className="text-lg font-bold text-white mb-2">No offline downloads yet</h3>
           <p className="text-zinc-400 max-w-sm text-xs leading-relaxed mb-6">
@@ -153,7 +153,7 @@ export const DownloadsView: React.FC<DownloadsViewProps> = ({ onPlay, onBrowseMo
                           title="Save HTML Stream Launcher"
                           className="p-1.5 hover:bg-white/[0.08] rounded-lg transition-colors text-zinc-400 hover:text-white cursor-pointer"
                         >
-                          <ArrowDownToLine className="w-4 h-4" />
+                          <Download className="w-4 h-4" />
                         </button>
 
                         <button

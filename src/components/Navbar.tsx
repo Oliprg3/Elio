@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Film, Tv, Flame, Bookmark, Settings, Home, Grid, DownloadCloud } from 'lucide-react';
+import { Search, Clapperboard, Tv, TrendingUp, Bookmark, Settings, Home, LayoutGrid, Download } from 'lucide-react';
 import { TMDBMedia } from '../types/tmdb';
 import { ElioLogo } from './ElioLogo';
 
@@ -24,12 +24,12 @@ export const Navbar: React.FC<NavbarProps> = ({
   const navItems = [
     { id: 'home', label: 'Home', icon: Home },
     { id: 'search', label: 'Search', icon: Search },
-    { id: 'movies', label: 'Movies', icon: Film },
+    { id: 'movies', label: 'Movies', icon: Clapperboard },
     { id: 'tv', label: 'Shows', icon: Tv },
-    { id: 'trending', label: 'Trending', icon: Flame },
-    { id: 'genres', label: 'Categories', icon: Grid },
+    { id: 'trending', label: 'Trending', icon: TrendingUp },
+    { id: 'genres', label: 'Categories', icon: LayoutGrid },
     { id: 'watchlist', label: 'My List', icon: Bookmark, badge: watchlistCount > 0 ? watchlistCount : undefined },
-    { id: 'downloads', label: 'Downloads', icon: DownloadCloud },
+    { id: 'downloads', label: 'Downloads', icon: Download },
   ];
 
   return (

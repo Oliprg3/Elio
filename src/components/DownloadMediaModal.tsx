@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   X,
-  DownloadCloud,
+  Download,
   Film,
   Tv,
   Copy,
   Check,
-  ArrowDownToLine,
   ExternalLink,
   Play,
 } from 'lucide-react';
@@ -113,7 +112,7 @@ export const DownloadMediaModal: React.FC<DownloadMediaModalProps> = ({
 
           {/* Modal Header */}
           <div className="flex items-center gap-3.5 mb-5 pr-8">
-            <DownloadCloud className="w-7 h-7 text-white shrink-0" strokeWidth={1.5} />
+            <Download className="w-7 h-7 text-white shrink-0" strokeWidth={1.5} />
             <div className="min-w-0">
               <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight truncate">
                 {title}
@@ -224,7 +223,7 @@ export const DownloadMediaModal: React.FC<DownloadMediaModalProps> = ({
                     onClick={() => handleStartDownload(opt)}
                     className="px-3.5 py-1.5 rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                   >
-                    <ArrowDownToLine className="w-3.5 h-3.5" />
+                    <Download className="w-3.5 h-3.5" />
                     <span>Download</span>
                   </button>
                 </div>

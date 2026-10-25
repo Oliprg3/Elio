@@ -18,7 +18,6 @@ import { CURATED_MOVIES, CURATED_TV } from './services/tmdbData';
 import { getWatchlist, getWatchHistory } from './services/storage';
 import { tvNav } from './services/tvNavigation';
 import { adBlocker } from './services/adBlocker';
-import { Flame, Film, Tv, Award, History, Bookmark, Zap, Compass, PlaySquare, Video, Layers, Smile } from 'lucide-react';
 
 // Code-splitting non-critical views and modals for fast initial bundle & parsing
 const WatchView = lazy(() => import('./components/WatchView').then((m) => ({ default: m.WatchView })));
@@ -324,7 +323,6 @@ export default function App() {
               {history.length > 0 && (
                 <MediaTray
                   title="Continue Watching"
-                  icon={History}
                   items={history.map((h) => ({
                     id: h.id,
                     title: h.type === 'movie' ? h.title : undefined,
@@ -349,7 +347,6 @@ export default function App() {
               {watchlist.length > 0 && (
                 <MediaTray
                   title="My List"
-                  icon={Bookmark}
                   items={watchlist}
                   onPlay={handleSelectMedia}
                   onInfo={(item) => setDetailModalItem(item)}
@@ -361,7 +358,6 @@ export default function App() {
               {/* Top Trending Today */}
               <MediaTray
                 title="Top Trending Today"
-                icon={Flame}
                 items={trendingHero.slice(0, 10)}
                 onPlay={handleSelectMedia}
                 onInfo={(item) => setDetailModalItem(item)}
@@ -373,7 +369,6 @@ export default function App() {
               {netflixMedia.length > 0 && (
                 <MediaTray
                   title="elio+ Originals & Exclusives"
-                  icon={PlaySquare}
                   items={netflixMedia}
                   onPlay={handleSelectMedia}
                   onInfo={(item) => setDetailModalItem(item)}
@@ -386,7 +381,6 @@ export default function App() {
               {hboMaxShows.length > 0 && (
                 <MediaTray
                   title="Critically Acclaimed Series"
-                  icon={Award}
                   items={hboMaxShows}
                   onPlay={handleSelectMedia}
                   onInfo={(item) => setDetailModalItem(item)}
@@ -399,7 +393,6 @@ export default function App() {
               {disneyMedia.length > 0 && (
                 <MediaTray
                   title="Blockbuster Franchises"
-                  icon={Film}
                   items={disneyMedia}
                   onPlay={handleSelectMedia}
                   onInfo={(item) => setDetailModalItem(item)}
@@ -411,7 +404,6 @@ export default function App() {
               {/* Popular Movies */}
               <MediaTray
                 title="Popular Movies"
-                icon={Film}
                 items={popularMovies}
                 onPlay={handleSelectMedia}
                 onInfo={(item) => setDetailModalItem(item)}
@@ -422,7 +414,6 @@ export default function App() {
               {/* Television Series */}
               <MediaTray
                 title="Television Series"
-                icon={Tv}
                 items={popularTV}
                 onPlay={handleSelectMedia}
                 onInfo={(item) => setDetailModalItem(item)}
@@ -434,7 +425,6 @@ export default function App() {
               {primeMedia.length > 0 && (
                 <MediaTray
                   title="Hollywood Hits"
-                  icon={Video}
                   items={primeMedia}
                   onPlay={handleSelectMedia}
                   onInfo={(item) => setDetailModalItem(item)}
@@ -447,7 +437,6 @@ export default function App() {
               {appleMedia.length > 0 && (
                 <MediaTray
                   title="Featured Premieres"
-                  icon={Layers}
                   items={appleMedia}
                   onPlay={handleSelectMedia}
                   onInfo={(item) => setDetailModalItem(item)}
@@ -459,7 +448,6 @@ export default function App() {
               {/* Top Rated Masterpieces */}
               <MediaTray
                 title="Top Rated Masterpieces"
-                icon={Award}
                 items={topRated}
                 onPlay={handleSelectMedia}
                 onInfo={(item) => setDetailModalItem(item)}
@@ -470,7 +458,6 @@ export default function App() {
               {/* Action & High-Octane */}
               <MediaTray
                 title="Action & High-Octane"
-                icon={Zap}
                 items={actionHits}
                 onPlay={handleSelectMedia}
                 onInfo={(item) => setDetailModalItem(item)}
@@ -481,7 +468,6 @@ export default function App() {
               {/* Sci-Fi & Cyberpunk */}
               <MediaTray
                 title="Sci-Fi & Cyberpunk"
-                icon={Compass}
                 items={scifiHits}
                 onPlay={handleSelectMedia}
                 onInfo={(item) => setDetailModalItem(item)}
@@ -493,7 +479,6 @@ export default function App() {
               {animeHits.length > 0 && (
                 <MediaTray
                   title="Anime & Animated Gems"
-                  icon={Film}
                   items={animeHits}
                   onPlay={handleSelectMedia}
                   onInfo={(item) => setDetailModalItem(item)}
@@ -506,7 +491,6 @@ export default function App() {
               {comedyHits.length > 0 && (
                 <MediaTray
                   title="Comedy & Feel-Good Hits"
-                  icon={Smile}
                   items={comedyHits}
                   onPlay={handleSelectMedia}
                   onInfo={(item) => setDetailModalItem(item)}

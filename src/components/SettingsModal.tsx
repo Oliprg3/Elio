@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Settings, Key, Check, ShieldCheck, DownloadCloud, ChevronDown } from 'lucide-react';
+import { X, Settings, Key, Check, ShieldCheck, Download, ChevronDown } from 'lucide-react';
 import { getSettings, saveSettings, UserSettings } from '../services/storage';
 import { adBlocker, AdBlockLevel } from '../services/adBlocker';
 
@@ -163,7 +163,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* PWA Install Section */}
           <div className="space-y-2 pt-4 border-t border-white/[0.06]">
             <label className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5">
-              <DownloadCloud className="w-3.5 h-3.5 text-zinc-400" />
+              <Download className="w-3.5 h-3.5 text-zinc-400" />
               Progressive Web App
             </label>
             <div className="p-3 bg-white/[0.02] border border-white/[0.06] rounded-xl space-y-2">

@@ -11,7 +11,7 @@ import {
   Share2,
   Moon,
   Sun,
-  DownloadCloud,
+  Download,
   X,
   RotateCw,
   AlertCircle,
@@ -565,7 +565,7 @@ export const WatchView: React.FC<WatchViewProps> = ({
               title={isDownloaded ? 'Downloaded' : 'Download for offline viewing'}
               className="p-2 text-zinc-300 hover:text-white transition-colors cursor-pointer bg-transparent"
             >
-              {isDownloaded ? <Check className="w-4 h-4 text-white" strokeWidth={1.5} /> : <DownloadCloud className="w-4 h-4" strokeWidth={1.5} />}
+              {isDownloaded ? <Check className="w-4 h-4 text-white" strokeWidth={1.5} /> : <Download className="w-4 h-4" strokeWidth={1.5} />}
             </button>
 
             {/* Share link */}

@@ -6,7 +6,7 @@ import {
   ChevronRight,
   Check,
   Clock,
-  DownloadCloud,
+  Download,
   Search,
   Layers,
 } from 'lucide-react';
@@ -326,7 +326,7 @@ export const NetflixEpisodeGuide: React.FC<NetflixEpisodeGuideProps> = ({
                                 : 'bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white border-white/[0.08]'
                             }`}
                           >
-                            <DownloadCloud className="w-4 h-4" strokeWidth={1.5} />
+                            <Download className="w-4 h-4" strokeWidth={1.5} />
                             <span className="hidden md:inline">Download</span>
                           </button>
 
@@ -450,7 +450,7 @@ export const NetflixEpisodeGuide: React.FC<NetflixEpisodeGuideProps> = ({
                           title={`Download Episode ${ep.episode_number}`}
                           className="p-1.5 text-zinc-400 hover:text-white transition-colors cursor-pointer bg-transparent"
                         >
-                          <DownloadCloud className="w-4 h-4" strokeWidth={1.5} />
+                          <Download className="w-4 h-4" strokeWidth={1.5} />
                         </button>
 
                         <span className="text-[11px] text-zinc-300 font-medium group-hover:text-white flex items-center">

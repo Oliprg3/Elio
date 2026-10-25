@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Play, Plus, Check, AlertCircle, DownloadCloud } from 'lucide-react';
+import { X, Play, Plus, Check, AlertCircle, Download } from 'lucide-react';
 import { TMDBMedia, MediaDetail } from '../types/tmdb';
 import { getMediaDetails, getBackdropUrl, getPosterUrl, getAvatarUrl, getProxiedImageUrl, normalizeImagePath } from '../services/tmdb';
 import { isItemInWatchlist, addToWatchlist, removeFromWatchlist, isItemDownloaded, addDownload } from '../services/storage';
@@ -198,7 +198,7 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
                   : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/[0.1] text-zinc-200 hover:text-white'
               }`}
             >
-              {isDownloaded ? <Check className="w-3.5 h-3.5 text-white" /> : <DownloadCloud className="w-3.5 h-3.5" />}
+              {isDownloaded ? <Check className="w-3.5 h-3.5 text-white" /> : <Download className="w-3.5 h-3.5" />}
               <span>{isDownloaded ? 'Downloaded' : 'Download'}</span>
             </button>
           </div>

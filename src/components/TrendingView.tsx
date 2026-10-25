@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Flame } from 'lucide-react';
+
 import { TMDBMedia } from '../types/tmdb';
 import { getTrendingAll } from '../services/tmdb';
 import { CURATED_MOVIES, CURATED_TV } from '../services/tmdbData';
