@@ -26,7 +26,6 @@ const TVShowsView = lazy(() => import('./components/TVShowsView').then((m) => ({
 const TrendingView = lazy(() => import('./components/TrendingView').then((m) => ({ default: m.TrendingView })));
 const GenresView = lazy(() => import('./components/GenresView').then((m) => ({ default: m.GenresView })));
 const WatchlistView = lazy(() => import('./components/WatchlistView').then((m) => ({ default: m.WatchlistView })));
-const DownloadsView = lazy(() => import('./components/DownloadsView').then((m) => ({ default: m.DownloadsView })));
 const NetflixSearchView = lazy(() => import('./components/NetflixSearchView').then((m) => ({ default: m.NetflixSearchView })));
 const MediaDetailModal = lazy(() => import('./components/MediaDetailModal').then((m) => ({ default: m.MediaDetailModal })));
 const SettingsModal = lazy(() => import('./components/SettingsModal').then((m) => ({ default: m.SettingsModal })));
@@ -300,11 +299,6 @@ export default function App() {
             onInfo={(item) => setDetailModalItem(item)}
             onUnreleased={(item) => setNotReleasedModalItem(item)}
             onWatchlistToggle={refreshStorageData}
-          />
-        ) : currentTab === 'downloads' ? (
-          <DownloadsView
-            onPlay={handleSelectMedia}
-            onBrowseMore={() => handleSelectTab('movies')}
           />
         ) : (
           /* Home Screen with Cinematic Hero & Curated Trays */

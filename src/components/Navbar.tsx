@@ -1,7 +1,16 @@
 import React from 'react';
-import { Search, Clapperboard, Tv, TrendingUp, Bookmark, Settings, Home, LayoutGrid, Download } from 'lucide-react';
+import { Search, Clapperboard, Tv, TrendingUp, Bookmark, Settings, Home, LayoutGrid, MonitorPlay } from 'lucide-react';
 import { TMDBMedia } from '../types/tmdb';
+import { detectIsTVDevice } from '../services/tvNavigation';
 import { ElioLogo } from './ElioLogo';
+
+interface NavItem {
+  id: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
+  badge?: number;
+  href?: string;
+}
 
 interface NavbarProps {
   currentTab: string;
@@ -20,8 +29,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSettings,
   watchlistCount,
 }) => {
+  // "Get App (.apk)" entry only appears on TV devices
+  const [isTV] = React.useState(() => detectIsTVDevice());
+
   // Left sidebar navigation items (Home, Search, Movies, Shows, etc.)
-  const navItems = [
+  const navItems: NavItem[] = [
     { id: 'home', label: 'Home', icon: Home },
     { id: 'search', label: 'Search', icon: Search },
     { id: 'movies', label: 'Movies', icon: Clapperboard },
@@ -29,8 +41,10 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'trending', label: 'Trending', icon: TrendingUp },
     { id: 'genres', label: 'Categories', icon: LayoutGrid },
     { id: 'watchlist', label: 'My List', icon: Bookmark, badge: watchlistCount > 0 ? watchlistCount : undefined },
-    { id: 'downloads', label: 'Downloads', icon: Download },
   ];
+  if (isTV) {
+    navItems.push({ id: 'get-app', label: 'Get App', icon: MonitorPlay, href: '/elio-tv.apk' });
+  }
 
   return (
     <>
@@ -59,19 +73,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentTab === item.id;
-            return (
-              <button
-                key={item.id}
-                id={`nav-link-${item.id}`}
-                onClick={() => onSelectTab(item.id)}
-                title={item.label}
-                aria-label={item.label}
-                className={`group relative flex flex-col items-center justify-center w-12 h-12 transition-colors cursor-pointer bg-transparent focus:outline-none ${
-                  isActive ? 'text-white' : 'text-zinc-500 hover:text-zinc-200'
-                }`}
-              >
+            const content = (
+              <>
                 {/* Active Left Indicator Bar */}
-                {isActive && (
+                {isActive && !item.href && (
                   <span className="absolute -left-2 top-1/2 -translate-y-1/2 w-1 h-6 bg-white rounded-r-full" />
                 )}
 
@@ -100,6 +105,37 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span className="pointer-events-none absolute left-full ml-3 px-2 py-1 rounded bg-[#111114] border border-white/10 text-[11px] font-medium text-white opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all whitespace-nowrap shadow-xl z-50">
                   {item.label}
                 </span>
+              </>
+            );
+
+            if (item.href) {
+              return (
+                <a
+                  key={item.id}
+                  id={`nav-link-${item.id}`}
+                  href={item.href}
+                  download="elio-tv.apk"
+                  title={item.label}
+                  aria-label={item.label}
+                  className="group relative flex flex-col items-center justify-center w-12 h-12 text-zinc-300 hover:text-white transition-colors cursor-pointer bg-transparent focus:outline-none"
+                >
+                  {content}
+                </a>
+              );
+            }
+
+            return (
+              <button
+                key={item.id}
+                id={`nav-link-${item.id}`}
+                onClick={() => onSelectTab(item.id)}
+                title={item.label}
+                aria-label={item.label}
+                className={`group relative flex flex-col items-center justify-center w-12 h-12 transition-colors cursor-pointer bg-transparent focus:outline-none ${
+                  isActive ? 'text-white' : 'text-zinc-500 hover:text-zinc-200'
+                }`}
+              >
+                {content}
               </button>
             );
           })}
@@ -135,6 +171,31 @@ export const Navbar: React.FC<NavbarProps> = ({
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentTab === item.id;
+          const content = (
+            <>
+              <Icon className="w-4 h-4" strokeWidth={1.5} />
+              <span className="whitespace-nowrap leading-none text-[9px]">{item.label}</span>
+              {item.badge !== undefined && (
+                <span className="absolute top-0.5 right-1.5 w-1.5 h-1.5 bg-white rounded-full" />
+              )}
+            </>
+          );
+          if (item.href) {
+            return (
+              <a
+                key={item.id}
+                id={`mobile-nav-${item.id}`}
+                href={item.href}
+                download="elio-tv.apk"
+                aria-label={item.label}
+                className={`flex flex-col items-center justify-center gap-1 py-1 px-1.5 text-[10px] transition-colors relative min-w-[44px] shrink-0 cursor-pointer bg-transparent focus:outline-none ${
+                  isActive ? 'text-white font-medium' : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                {content}
+              </a>
+            );
+          }
           return (
             <button
               key={item.id}
@@ -144,11 +205,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 isActive ? 'text-white font-medium' : 'text-zinc-500 hover:text-zinc-300'
               }`}
             >
-              <Icon className="w-4 h-4" strokeWidth={1.5} />
-              <span className="whitespace-nowrap leading-none text-[9px]">{item.label}</span>
-              {item.badge !== undefined && (
-                <span className="absolute top-0.5 right-1.5 w-1.5 h-1.5 bg-white rounded-full" />
-              )}
+              {content}
             </button>
           );
         })}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Settings, Key, Check, ShieldCheck, Download, ChevronDown } from 'lucide-react';
+import { X, Settings, Key, Check, ShieldCheck, Download, ChevronDown, MonitorPlay } from 'lucide-react';
 import { getSettings, saveSettings, UserSettings } from '../services/storage';
 import { adBlocker, AdBlockLevel } from '../services/adBlocker';
 
@@ -184,6 +184,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <p>• <strong>Android (Chrome):</strong> Tap the 3-dot menu and select "Install App" or "Add to Home Screen".</p>
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Android TV App (.apk) Download Section */}
+          <div className="space-y-2 pt-4 border-t border-white/[0.06]">
+            <label className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5">
+              <MonitorPlay className="w-3.5 h-3.5 text-zinc-400" />
+              Android App (.apk)
+            </label>
+            <div className="p-3 bg-white/[0.02] border border-white/[0.06] rounded-xl space-y-3">
+              <p className="text-xs text-zinc-300 leading-relaxed">
+                Download the native Android app — works on Android TV with your remote and on phones & tablets.
+              </p>
+              <div className="flex items-center gap-2">
+                <a
+                  href="/elio-tv.apk"
+                  download="elio-tv.apk"
+                  id="download-apk-btn"
+                  className="flex-1 py-2 bg-white hover:bg-zinc-200 text-zinc-950 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Download APK
+                </a>
+                <span className="text-[10px] text-zinc-500 shrink-0">
+                  Android 6.0+ · TV & Mobile
+                </span>
+              </div>
             </div>
           </div>
         </div>

@@ -12,7 +12,8 @@
     "lint": "tsc --noEmit",
     "cap:sync": "npx cap sync",
     "android:add": "npx cap add android",
-    "android:copy": "npx cap copy android"
+    "android:copy": "npx cap copy android",
+    "build:apk": "./build-apk.sh"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",
