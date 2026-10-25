@@ -8,7 +8,7 @@ export interface TVModeState {
   isRemoteNavigating: boolean;
 }
 
-const TV_UA_REGEX = /Android.*(TV|SmartTV|LargeScreen)|Leanback|BRAVIA|\bAFT[A-Z0-9]*\b|GoogleTV|HbbTV|Tizen|Web0S|Roku|AppleTV|MiTV|Shield.*Android/i;
+const TV_UA_REGEX = /Android.*(TV|SmartTV|LargeScreen)|Leanback|BRAVIA|\bAFT[A-Z0-9]*\b|GoogleTV|HbbTV|Tizen|Web0S|Roku|AppleTV|MiTV|Shield.*Android|\bTV\b|NetCast|Viera|Hisense|PhilipsTV|CrKey|Android TV/i;
 
 /** The desktop layout width every TV renders at, scaled to fill the screen */
 export const TV_DESIGN_WIDTH = 1280;

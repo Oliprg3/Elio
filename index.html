@@ -11,7 +11,7 @@
         try {
           var ua = navigator.userAgent || '';
           var isTV =
-            /Android.*(TV|SmartTV|LargeScreen)|Leanback|BRAVIA|\bAFT[A-Z0-9]*\b|GoogleTV|HbbTV|Tizen|Web0S|Roku|AppleTV|MiTV|Shield.*Android/i.test(ua);
+            /Android.*(TV|SmartTV|LargeScreen)|Leanback|BRAVIA|\bAFT[A-Z0-9]*\b|GoogleTV|HbbTV|Tizen|Web0S|Roku|AppleTV|MiTV|Shield.*Android|\bTV\b|NetCast|Viera|Hisense|PhilipsTV|CrKey|Android TV/i.test(ua);
           try {
             var qp = new URLSearchParams(window.location.search);
             isTV = isTV || qp.get('tv') === '1' || qp.get('tv') === 'true' || qp.get('mode') === 'tv' || qp.get('android_tv') === '1';

@@ -58,9 +58,9 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({ isOpen, onClos
       setDeferredPrompt(null);
     } else {
       if (activeTab === 'android') {
-        triggerFileDownload('/app-release.apk', 'elio-app.apk');
+        triggerFileDownload('/elio-tv.apk', 'elio-tv.apk');
       } else {
-        triggerFileDownload('/app-release.apk', 'elio-app.apk');
+        triggerFileDownload('/elio-tv.apk', 'elio-tv.apk');
       }
     }
   };
@@ -318,8 +318,8 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({ isOpen, onClos
             </button>
           ) : activeTab === 'android' ? (
             <a
-              href="/app-release.apk"
-              download="elio-app.apk"
+              href="/elio-tv.apk"
+              download="elio-tv.apk"
               target="_blank"
               rel="noopener noreferrer"
               onClick={() => {
