@@ -1,7 +1,7 @@
 import React from 'react';
 import { Search, Clapperboard, Tv, TrendingUp, Bookmark, Settings, Home, LayoutGrid, MonitorPlay } from 'lucide-react';
 import { TMDBMedia } from '../types/tmdb';
-import { detectIsTVDevice } from '../services/tvNavigation';
+import { detectIsTVDevice, tvNav } from '../services/tvNavigation';
 import { ElioLogo } from './ElioLogo';
 
 interface NavItem {
@@ -39,9 +39,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSettings,
   watchlistCount,
 }) => {
-  // "Get App (.apk)" entry only appears on TV devices
-  const [isTV] = React.useState(() => detectIsTVDevice());
+  // "Get App (.apk)" entry only appears on TV devices (manual switch or auto-detect)
+  const [isTV, setIsTV] = React.useState(() => detectIsTVDevice());
   const [apkHref] = React.useState(() => (isNativeShell() ? '/__update__/elio-tv.apk' : '/elio-tv.apk'));
+  React.useEffect(() => tvNav.subscribe((tv) => setIsTV(tv)), []);
 
   // Left sidebar navigation items (Home, Search, Movies, Shows, etc.)
   const navItems: NavItem[] = [
