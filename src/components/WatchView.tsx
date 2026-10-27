@@ -14,6 +14,7 @@ import {
   Download,
   X,
   RotateCw,
+  Server,
   AlertCircle,
   ExternalLink,
   ShieldCheck,
@@ -62,7 +63,11 @@ export const WatchView: React.FC<WatchViewProps> = ({
 }) => {
   const [media, setMedia] = useState<MediaDetail | null>(() => getLocalMediaFallback(type, id));
   const [loading, setLoading] = useState(false);
-  const [serverIndex, setServerIndex] = useState<number>(0); // Default to VidZee Ultra
+  const [serverIndex, setServerIndex] = useState<number>(() => {
+    const saved = getSettings().preferredServer;
+    const idx = STREAM_SERVERS.findIndex((s) => s.id === saved);
+    return idx >= 0 ? idx : 0;
+  });
   const [selectedSeason, setSelectedSeason] = useState<number>(1);
   const [selectedEpisode, setSelectedEpisode] = useState<number>(1);
   const [targetDownloadSeason, setTargetDownloadSeason] = useState<number>(1);
@@ -148,8 +153,9 @@ export const WatchView: React.FC<WatchViewProps> = ({
     if (settings.streamEnhancer !== undefined) {
       setStreamEnhancer(settings.streamEnhancer);
     }
-    setServerIndex(0);
-    saveSettings({ preferredServer: 'vidzee' });
+    const saved = getSettings().preferredServer;
+    const savedIdx = STREAM_SERVERS.findIndex((s) => s.id === saved);
+    setServerIndex(savedIdx >= 0 ? savedIdx : 0);
 
     const prevHistory = getHistoryItem(id, type);
     if (prevHistory) {
@@ -305,19 +311,25 @@ export const WatchView: React.FC<WatchViewProps> = ({
     setShowNextPrompt(false);
   };
 
-  // VidZee is the dedicated exclusive stream provider. When the shield proxy
-  // is available, load the embed through our own origin so ad scripts and ad
-  // overlay slots are stripped at the server level.
+  // Multi-stream providers with manual fallback (hosts suffer outages).
+  // When the shield proxy is available (server.js), the VidZee embed is
+  // loaded through our own origin so ad scripts and overlay slots are
+  // stripped at the server level.
   const vidzeePath =
     type === 'movie'
       ? `/embed/movie/${id}?lang=en&sub=en`
       : `/embed/tv/${id}/${selectedSeason}/${selectedEpisode}?lang=en&sub=en`;
 
-  const useShieldProxy = !forceDirect && streamSource === 'proxy';
+  const streamServer = STREAM_SERVERS[serverIndex % STREAM_SERVERS.length];
+  const isVidzee = streamServer.id === 'vidzee';
+
+  const useShieldProxy = isVidzee && !forceDirect && streamSource === 'proxy';
 
   const streamUrl = useShieldProxy
     ? vidzeePath
-    : `https://player.vidzee.wtf${vidzeePath}`;
+    : type === 'movie'
+      ? streamServer.getMovieUrl(id)
+      : streamServer.getTvUrl(id, selectedSeason, selectedEpisode);
 
 
   const toggleWatchlist = () => {
@@ -624,6 +636,26 @@ export const WatchView: React.FC<WatchViewProps> = ({
                 <span className="hidden sm:inline">{forceDirect ? 'Shielded' : 'Direct'}</span>
               </button>
             )}
+
+            {/* Switch Stream Source (providers sometimes suffer outages) */}
+            <button
+              id="btn-switch-server"
+              onClick={() => {
+                adBlocker.suppressNextPopups(3000);
+                const nextIndex = (serverIndex + 1) % STREAM_SERVERS.length;
+                setServerIndex(nextIndex);
+                setForceDirect(false);
+                saveSettings({ preferredServer: STREAM_SERVERS[nextIndex].id });
+                setPlayerKey((k) => k + 1);
+                setPlayerNotification(`Server: ${STREAM_SERVERS[nextIndex].name}`);
+                setTimeout(() => setPlayerNotification(null), 2500);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.06] text-xs font-medium transition-all cursor-pointer shadow-sm active:scale-95"
+              title={`Switch server — current: ${streamServer.name}`}
+            >
+              <Server className="w-3.5 h-3.5 text-zinc-400" />
+              <span className="hidden sm:inline">{streamServer.name}</span>
+            </button>
 
 
             {/* Zero Pop-up Protection Shield Indicator */}

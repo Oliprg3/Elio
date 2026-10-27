@@ -22,4 +22,18 @@ export const STREAM_SERVERS: StreamServer[] = [
     getMovieUrl: (id) => `https://player.vidzee.wtf/embed/movie/${id}?lang=en&sub=en`,
     getTvUrl: (id, s, e) => `https://player.vidzee.wtf/embed/tv/${id}/${s}/${e}?lang=en&sub=en`,
   },
+  {
+    id: 'vidfast',
+    name: 'VidFast',
+    badge: 'Fast',
+    getMovieUrl: (id) => `https://vidfast.vc/movie/${id}`,
+    getTvUrl: (id, s, e) => `https://vidfast.vc/tv/${id}/${s}/${e}`,
+  },
+  {
+    id: 'vidlink',
+    name: 'VidLink',
+    badge: 'Backup',
+    getMovieUrl: (id) => `https://vidlink.pro/movie/${id}`,
+    getTvUrl: (id, s, e) => `https://vidlink.pro/tv/${id}/${s}/${e}`,
+  },
 ];
