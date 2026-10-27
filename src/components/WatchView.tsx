@@ -42,7 +42,7 @@ import { StreamQualityControl } from './StreamQualityControl';
 import { RelatedMediaSection } from './RelatedMediaSection';
 import { DownloadMediaModal } from './DownloadMediaModal';
 import { adBlocker, AdBlockLevel } from '../services/adBlocker';
-import { probeVidzeeProxy } from '../services/vidzeeProxy';
+import { probeStreamProxy, proxiedEmbedUrl } from '../services/streamProxy';
 import { pickFirstAliveProvider } from '../services/servers';
 
 interface WatchViewProps {
@@ -132,7 +132,7 @@ export const WatchView: React.FC<WatchViewProps> = ({
   // with ad scripts and ad slots removed at the server level.
   useEffect(() => {
     let alive = true;
-    probeVidzeeProxy().then((available) => {
+    probeStreamProxy().then((available) => {
       if (alive) setStreamSource(available ? 'proxy' : 'direct');
     });
     return () => {
@@ -337,21 +337,26 @@ export const WatchView: React.FC<WatchViewProps> = ({
   };
 
   // Multi-stream providers with manual fallback (hosts suffer outages).
-  // When the shield proxy is available (server.js), the VidZee embed is
-  // loaded through our own origin so ad scripts and overlay slots are
-  // stripped at the server level.
-  const vidzeePath =
-    type === 'movie'
-      ? `/embed/movie/${id}?lang=en&sub=en`
-      : `/embed/tv/${id}/${selectedSeason}/${selectedEpisode}?lang=en&sub=en`;
-
+  // When the shield proxy is available (server.js) the embed is loaded
+  // through our own origin so ad scripts and overlay slots are stripped
+  // at the server level for every provider.
   const streamServer = STREAM_SERVERS[serverIndex % STREAM_SERVERS.length];
+
+  const providerPath =
+    streamServer.id === 'vidzee'
+      ? type === 'movie'
+        ? `/embed/movie/${id}?lang=en&sub=en`
+        : `/embed/tv/${id}/${selectedSeason}/${selectedEpisode}?lang=en&sub=en`
+      : type === 'movie'
+        ? `/movie/${id}`
+        : `/tv/${id}/${selectedSeason}/${selectedEpisode}`;
+
   const isVidzee = streamServer.id === 'vidzee';
 
-  const useShieldProxy = isVidzee && !forceDirect && streamSource === 'proxy';
+  const useShieldProxy = !forceDirect && streamSource === 'proxy';
 
   const streamUrl = useShieldProxy
-    ? vidzeePath
+    ? proxiedEmbedUrl(streamServer.id, providerPath)
     : type === 'movie'
       ? streamServer.getMovieUrl(id)
       : streamServer.getTvUrl(id, selectedSeason, selectedEpisode);
@@ -786,7 +791,9 @@ export const WatchView: React.FC<WatchViewProps> = ({
                 referrerPolicy="origin"
                 sandbox={
                   useShieldProxy
-                    ? 'allow-scripts allow-presentation allow-pointer-lock allow-forms'
+                    ? isVidzee
+                      ? 'allow-scripts allow-presentation allow-pointer-lock allow-forms'
+                      : undefined
                     : isVidzee
                       ? adBlocker.getIframeSandboxAttributes() || 'allow-scripts allow-same-origin allow-presentation allow-pointer-lock allow-forms'
                       : undefined
