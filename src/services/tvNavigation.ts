@@ -19,16 +19,6 @@ const TV_VIEWPORT = `width=${TV_DESIGN_WIDTH}, viewport-fit=cover, user-scalable
 export function detectIsTVDevice(): boolean {
   if (typeof window === 'undefined') return false;
 
-  // 0. Manual override from Settings ("TV Mode" switch)
-  try {
-    const override = window.localStorage.getItem('elio_tv_mode');
-    if (override === '1' || override === 'true') return true;
-    if (override === '0' || override === 'false') return false;
-  } catch {
-    /* storage unavailable */
-  }
-
-  // 1. Explicit URL parameter (e.g., ?tv=1, ?mode=tv)
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.get('tv') === '1' || urlParams.get('tv') === 'true' || urlParams.get('mode') === 'tv' || urlParams.get('android_tv') === '1') {
     return true;
@@ -96,16 +86,8 @@ class SpatialNavigationManager {
   public setTVMode(enabled: boolean) {
     this.isTV = enabled;
 
-    // Persist the manual switch (empty = auto detection)
-    try {
-      window.localStorage.setItem('elio_tv_mode', enabled ? '1' : '0');
-    } catch {
-      /* storage unavailable */
-    }
-
     this.applyTVClass(enabled);
 
-    syncTVViewport(enabled);
     if (enabled) {
       this.startListening();
       this.focusFirstAvailableElement();
