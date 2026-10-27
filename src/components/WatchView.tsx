@@ -43,6 +43,7 @@ import { RelatedMediaSection } from './RelatedMediaSection';
 import { DownloadMediaModal } from './DownloadMediaModal';
 import { adBlocker, AdBlockLevel } from '../services/adBlocker';
 import { probeVidzeeProxy } from '../services/vidzeeProxy';
+import { pickFirstAliveProvider } from '../services/servers';
 
 interface WatchViewProps {
   type: 'movie' | 'tv';
@@ -138,6 +139,30 @@ export const WatchView: React.FC<WatchViewProps> = ({
       alive = false;
     };
   }, []);
+
+  // Auto-fallback: hop to the next healthy provider when the current one is
+  // unreachable (e.g. VidZee suffering a Cloudflare 522 outages). Runs per
+  // media open; never loops back to the saved preference unless it is alive.
+  const serverIndexRef = useRef(serverIndex);
+  useEffect(() => {
+    serverIndexRef.current = serverIndex;
+  }, [serverIndex]);
+
+  useEffect(() => {
+    let alive = true;
+    pickFirstAliveProvider(serverIndexRef.current, type, id).then((idx) => {
+      if (alive && idx !== serverIndexRef.current) {
+        setServerIndex(idx);
+        setForceDirect(false);
+        setPlayerNotification(`Auto-switched to ${STREAM_SERVERS[idx].name}`);
+        setTimeout(() => setPlayerNotification(null), 3000);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, type]);
 
   // Sync state instantly if type or id changes
   useEffect(() => {
@@ -762,7 +787,9 @@ export const WatchView: React.FC<WatchViewProps> = ({
                 sandbox={
                   useShieldProxy
                     ? 'allow-scripts allow-presentation allow-pointer-lock allow-forms'
-                    : adBlocker.getIframeSandboxAttributes() || 'allow-scripts allow-same-origin allow-presentation allow-pointer-lock allow-forms'
+                    : isVidzee
+                      ? adBlocker.getIframeSandboxAttributes() || 'allow-scripts allow-same-origin allow-presentation allow-pointer-lock allow-forms'
+                      : undefined
                 }
               />
             )}
