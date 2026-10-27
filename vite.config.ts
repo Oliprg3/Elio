@@ -11,6 +11,11 @@ export default defineConfig(() => {
       react(),
       tailwindcss(),
       VitePWA({
+        // Manifest is served from public/manifest.json (see index.html).
+        // SW generation raced the main build (terer renderChunk early-exit) and
+        // failed every `npm run build` — disabled in favor of the self-destroying
+        // public/sw.js that unregisters legacy installs and stops caching.
+        disable: true,
         registerType: 'autoUpdate',
         includeAssets: ['favicon-32x32.png', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'icon.png', 'icon.svg'],
         manifest: {

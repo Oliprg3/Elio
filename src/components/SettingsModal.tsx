@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Settings, Key, Check, ShieldCheck, Download, ChevronDown, MonitorPlay } from 'lucide-react';
+import { X, Settings, Key, Check, ShieldCheck, Download, ChevronDown, MonitorPlay, Tv } from 'lucide-react';
 import { getSettings, saveSettings, UserSettings } from '../services/storage';
 import { adBlocker, AdBlockLevel } from '../services/adBlocker';
+import { tvNav, detectIsTVDevice } from '../services/tvNavigation';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -19,6 +20,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [preferredServer, setPreferredServer] = useState('vidzee');
   const [adBlockLevel, setAdBlockLevel] = useState<AdBlockLevel>(adBlocker.getLevel());
   const [showInstallGuide, setShowInstallGuide] = useState(false);
+  const [tvMode, setTvMode] = useState(() => detectIsTVDevice());
   const [savedAlert, setSavedAlert] = useState(false);
   const [apkHref] = useState(() =>
     navigator.userAgent.includes('elio-native-shell')
@@ -189,6 +191,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <p>• <strong>Android (Chrome):</strong> Tap the 3-dot menu and select "Install App" or "Add to Home Screen".</p>
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* TV Experience Section */}
+          <div className="space-y-2 pt-4 border-t border-white/[0.06]">
+            <label className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5">
+              <Tv className="w-3.5 h-3.5 text-zinc-400" />
+              TV Experience
+            </label>
+            <div className="p-3 bg-white/[0.02] border border-white/[0.06] rounded-xl space-y-3">
+              <p className="text-xs text-zinc-300 leading-relaxed">
+                Remote-friendly mode with big focus outlines and D-pad navigation. Forced ON/OFF overrides auto-detection on your TV.
+              </p>
+              <button
+                onClick={() => {
+                  const next = !tvMode;
+                  setTvMode(next);
+                  tvNav.setTVMode(next);
+                }}
+                id="tv-mode-toggle"
+                className={`w-full py-2.5 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2 cursor-pointer border ${
+                  tvMode
+                    ? 'bg-white text-zinc-950 border-white hover:bg-zinc-200'
+                    : 'bg-white/[0.05] text-zinc-400 border-white/[0.06] hover:bg-white/[0.1] hover:text-white'
+                }`}
+              >
+                <Tv className="w-4 h-4" />
+                {tvMode ? 'TV Mode: Enabled' : 'Enable TV Mode'}
+              </button>
             </div>
           </div>
 
