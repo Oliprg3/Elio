@@ -24,6 +24,7 @@ const port = process.env.PORT || 3000;
 // ---------------------------------------------------------------------------
 
 const PROXIED_PROVIDERS = {
+  cinemaos: 'https://cinemaos.tech',
   vidzee: 'https://player.vidzee.wtf',
   vidfast: 'https://vidfast.vc',
   vidlink: 'https://vidlink.pro',

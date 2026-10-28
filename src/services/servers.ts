@@ -16,6 +16,18 @@ export const STREAM_QUALITIES: StreamQualityOption[] = [
 
 export const STREAM_SERVERS: StreamServer[] = [
   {
+    id: 'cinemaos',
+    name: 'CinemaOS',
+    badge: 'HD',
+    getMovieUrl: (id) => `https://cinemaos.tech/player/${id}?theme=ffffff`,
+    getTvUrl: (id, s, e) => `https://cinemaos.tech/player/${id}/${s}/${e}?theme=ffffff`,
+    getProxyPath: (type, id, s, e) =>
+      type === 'movie' ? `/player/${id}` : `/player/${id}/${s}/${e}`,
+    // Their WAF answers 403 for /favicon.ico, so the image probe would always
+    // call this (working) provider dead. Opt out of the auto-probe.
+    skipAliveProbe: true,
+  },
+  {
     id: 'vidzee',
     name: 'VidZee',
     badge: '1080p',
@@ -87,8 +99,10 @@ function originOfServer(server: StreamServer, type: 'movie' | 'tv', id: number |
 
 /**
  * Returns the first provider index that passes the health probe, starting
- * with the currently preferred one. Keeps the current provider when it is
- * alive or when everything is unreachable.
+ * with the currently preferred one and then walking the list in display
+ * order (CinemaOS first). Providers flagged skipAliveProbe count as alive
+ * because their WAF blocks favicon probes entirely. Keeps the current
+ * provider when it is alive, skipped, or when everything probes dead.
  */
 export function pickFirstAliveProvider(
   startIndex: number,
@@ -98,14 +112,13 @@ export function pickFirstAliveProvider(
   return (async () => {
     if (startIndex < 0 || startIndex >= STREAM_SERVERS.length) return startIndex;
 
-    const currentOrigin = originOfServer(STREAM_SERVERS[startIndex], type, id);
-    if (!currentOrigin) return startIndex;
+    const order = [startIndex];
+    for (let i = 0; i < STREAM_SERVERS.length; i++) {
+      if (i !== startIndex) order.push(i);
+    }
 
-    const currentAlive = await probeProviderAlive(currentOrigin);
-    if (currentAlive) return startIndex;
-
-    for (let i = 1; i < STREAM_SERVERS.length; i++) {
-      const idx = (startIndex + i) % STREAM_SERVERS.length;
+    for (const idx of order) {
+      if (STREAM_SERVERS[idx].skipAliveProbe) return idx;
       const origin = originOfServer(STREAM_SERVERS[idx], type, id);
       if (!origin) continue;
       const alive = await probeProviderAlive(origin);

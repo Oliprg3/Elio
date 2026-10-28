@@ -129,6 +129,10 @@ export interface StreamServer {
   getMovieUrl: (tmdbId: number | string) => string;
   getTvUrl: (tmdbId: number | string, season: number, episode: number) => string;
   getAnimeUrl?: (tmdbId: number | string, season: number, episode: number) => string;
+  /** Upstream path (no origin) used when the server-side shield proxy re-serves this provider. */
+  getProxyPath?: (type: 'movie' | 'tv', tmdbId: number | string, season?: number, episode?: number) => string;
+  /** Providers whose WAF blocks favicon probes (403) must opt out of the auto-fallback probe. */
+  skipAliveProbe?: boolean;
 }
 
 export interface DownloadedMedia {

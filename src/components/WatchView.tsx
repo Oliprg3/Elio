@@ -343,13 +343,15 @@ export const WatchView: React.FC<WatchViewProps> = ({
   const streamServer = STREAM_SERVERS[serverIndex % STREAM_SERVERS.length];
 
   const providerPath =
-    streamServer.id === 'vidzee'
-      ? type === 'movie'
-        ? `/embed/movie/${id}?lang=en&sub=en`
-        : `/embed/tv/${id}/${selectedSeason}/${selectedEpisode}?lang=en&sub=en`
-      : type === 'movie'
-        ? `/movie/${id}`
-        : `/tv/${id}/${selectedSeason}/${selectedEpisode}`;
+    streamServer.getProxyPath
+      ? streamServer.getProxyPath(type, id, selectedSeason, selectedEpisode)
+      : streamServer.id === 'vidzee'
+        ? type === 'movie'
+          ? `/embed/movie/${id}?lang=en&sub=en`
+          : `/embed/tv/${id}/${selectedSeason}/${selectedEpisode}?lang=en&sub=en`
+        : type === 'movie'
+          ? `/movie/${id}`
+          : `/tv/${id}/${selectedSeason}/${selectedEpisode}`;
 
   const isVidzee = streamServer.id === 'vidzee';
 
