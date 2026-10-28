@@ -70,6 +70,56 @@ function proxyHeaders(req, upstreamOrigin) {
   };
 }
 
+// Full desktop-Chrome impersonation for retrying upstreams that score their
+// bot protection on header consistency (sec-ch-ua / sec-fetch-*) — deploy
+// hosts behind datacenter IPs often get the forwarded client UA flagged.
+const DESKTOP_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+
+function browserImpersonationHeaders(upstreamOrigin) {
+  return {
+    'user-agent': DESKTOP_UA,
+    accept:
+      'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'accept-encoding': 'identity',
+    'accept-language': 'en-US,en;q=0.9',
+    'sec-ch-ua': '"Google Chrome";v="126", "Not:A-Brand";v="8", "Chromium";v="126"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"Windows"',
+    'sec-fetch-dest': 'document',
+    'sec-fetch-mode': 'navigate',
+    'sec-fetch-site': 'none',
+    'sec-fetch-user': '?1',
+    'upgrade-insecure-requests': '1',
+    referer: `${upstreamOrigin}/`,
+  };
+}
+
+/**
+ * Upstream fetch with geo/bot-style retry: first try to faithfully forward
+ * the client's own headers; when the provider's WAF rejects that (401/403/
+ * 429) retry once with a full desktop-Chrome impersonation. Undici's global
+ * dispatcher connection reuse per (origin, header set) keeps the two attempts
+ * independent.
+ */
+async function fetchUpstreamResilient(url, req, provider) {
+  const upstreamOrigin = PROXIED_PROVIDERS[provider] || PROXIED_PROVIDERS.vidzee;
+  let res = await fetch(url, { headers: proxyHeaders(req, upstreamOrigin) });
+  if (!res.ok && [400, 401, 403, 429, 503].includes(res.status)) {
+    try {
+      console.warn(
+        `[shield] ${provider} upstream ${res.status} for ${url} — retrying with browser impersonation`
+      );
+      res = await fetch(url, {
+        headers: browserImpersonationHeaders(upstreamOrigin),
+      });
+    } catch (_) {
+      // keep original response as the error signal
+    }
+  }
+  return res;
+}
+
 // Hash-allowlist every inline bootstrap script already present in the embed
 // HTML so the strict CSP cannot break the player's own loader.
 function collectInlineScriptHashes(html) {
@@ -107,12 +157,20 @@ function buildShieldCsp(origin, provider, html) {
 async function serveShieldedEmbed(req, res, upstreamPath, provider = 'vidzee') {
   const upstreamOrigin = PROXIED_PROVIDERS[provider] || PROXIED_PROVIDERS.vidzee;
   try {
-    const upstream = await fetch(`${upstreamOrigin}${upstreamPath}`, {
-      headers: proxyHeaders(req, upstreamOrigin),
-    });
+    const upstream = await fetchUpstreamResilient(
+      `${upstreamOrigin}${upstreamPath}`,
+      req,
+      provider
+    );
     if (!upstream.ok) {
-      res.status(upstream.status);
-      return res.type('text/html').send(`${provider} embed unavailable`);
+      // Graceful degradation: rather than a dead error page inside the
+      // iframe, send the frame straight to the provider so the video
+      // still plays — ads remain inside the frame only.
+      console.warn(
+        `[shield] ${provider} embed failed (${upstream.status}) — redirecting frame to provider`
+      );
+      res.set('Cache-Control', 'no-store');
+      return res.redirect(302, `${upstreamOrigin}${upstreamPath}`);
     }
 
     let html = await upstream.text();
@@ -184,9 +242,10 @@ app.get('/player-proxy/assets/:asset', async (req, res) => {
     return res.status(400).end();
   }
   try {
-    const upstream = await fetch(
+    const upstream = await fetchUpstreamResilient(
       `${PROXIED_PROVIDERS.vidzee}/assets/${asset}`,
-      { headers: proxyHeaders(req, PROXIED_PROVIDERS.vidzee) }
+      req,
+      'vidzee'
     );
     if (!upstream.ok) return res.status(upstream.status).end();
     const buffer = Buffer.from(await upstream.arrayBuffer());
@@ -214,9 +273,11 @@ app.get(`${PROXY_PREFIX}/:provider/*`, async (req, res) => {
   // Assets served with long cache headers
   if (rest.startsWith('assets/') || rest.startsWith('_next/')) {
     try {
-      const upstream = await fetch(`${upstreamOrigin}/${rest}`, {
-        headers: proxyHeaders(req, upstreamOrigin),
-      });
+      const upstream = await fetchUpstreamResilient(
+        `${upstreamOrigin}/${rest}`,
+        req,
+        provider
+      );
       if (!upstream.ok) return res.status(upstream.status).end();
       const buffer = Buffer.from(await upstream.arrayBuffer());
       res.set('Content-Type', upstream.headers.get('content-type') || 'application/octet-stream');
@@ -230,11 +291,24 @@ app.get(`${PROXY_PREFIX}/:provider/*`, async (req, res) => {
   // Everything else: fetch first, then shield HTML responses (embed pages);
   // raw passthrough for the rest (API calls, JSON, subtitles etc.).
   try {
-    const upstream = await fetch(`${upstreamOrigin}/${rest}`, {
-      headers: proxyHeaders(req, upstreamOrigin),
-      redirect: 'follow',
-    });
+    const upstream = await fetchUpstreamResilient(
+      `${upstreamOrigin}/${rest}`,
+      req,
+      provider
+    );
     if (!upstream.ok) {
+      // For API/JSON calls a redirect makes little sense, but HTML-pages may
+      // be directly embedded as a graceful fallback.
+      const contentType = upstream.headers.get('content-type') || '';
+      if (contentType.includes('text/html')) {
+        console.warn(
+          `[shield] ${provider} page ${upstream.status} — redirecting frame to provider`
+        );
+        res.set('Cache-Control', 'no-store');
+        const qs = new URLSearchParams(req.query);
+        const suffix = qs.toString() ? `?${qs.toString()}` : '';
+        return res.redirect(302, `${upstreamOrigin}/${rest}${suffix}`);
+      }
       return res.status(upstream.status).type('text/plain').send(`${provider} upstream ${upstream.status}`);
     }
     const contentType = upstream.headers.get('content-type') || 'application/octet-stream';

@@ -109,6 +109,27 @@ export const WatchView: React.FC<WatchViewProps> = ({
       if (!frameWin) return;
       const doc = (frameWin as any).document;
       if (!doc || !doc.documentElement) return;
+
+      // Same-origin failure detection: the shield proxy serves embed pages
+      // from our origin, so a "redirect to provider" notice or an error page
+      // is readable. If the shield cannot serve this provider right now,
+      // fall back to the raw embed instead of leaving a dead frame.
+      try {
+        const text = String(doc.body?.textContent || '').slice(0, 4000);
+        const marker = /embed unavailable|upstream \d{3}|embed fetch failed/i;
+        if (
+          !forceDirect &&
+          marker.test(text) &&
+          text.length < 2000 &&
+          !doc.querySelector('video,#root,#__next,#app')
+        ) {
+          setForceDirect(true);
+          setPlayerNotification('Shield unavailable — direct embed');
+          setTimeout(() => setPlayerNotification(null), 3000);
+          return;
+        }
+      } catch (_) {}
+
       adBlocker.hardenFrame(frameWin);
 
       // Scrub overlays that render before the harden pass observer kicks in
