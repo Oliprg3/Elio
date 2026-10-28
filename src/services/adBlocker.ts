@@ -119,6 +119,9 @@ export const KNOWN_AD_DOMAINS = [
   'izooto.com',
   'pushnews.in',
   'sibautomation.com',
+  'coinzilla.com',
+  'mellowads.com',
+  'trafficfactory.biz',
   'claimreward',
   'reward-giveaway',
 ];
@@ -304,38 +307,42 @@ class AdBlockerEngine {
     this.suppressionUntil = Math.max(this.suppressionUntil, Date.now() + durationMs);
   }
 
+  /**
+   * Harmless mock window object handed to ad scripts: they think the popup
+   * succeeded and do not trigger fallback redirects. Used for the top
+   * window and hardened sub-frames alike.
+   */
+  private createMockWindow(opener: Window): Window {
+    const mock = {
+      closed: false,
+      name: '_blank',
+      opener: opener,
+      location: {
+        href: '',
+        assign: () => {},
+        replace: () => {},
+        reload: () => {},
+      },
+      document: {
+        write: () => {},
+        close: () => {},
+      },
+      focus: () => {},
+      blur: () => {},
+      close: () => {},
+      postMessage: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    } as unknown as Window;
+    return mock;
+  }
+
   public init() {
     if (this.isInitialized || typeof window === 'undefined') return;
     this.isInitialized = true;
 
     this.originalWindowOpen = window.open;
-
-    // 1. Harmless mock window object to prevent ad scripts from detecting popup blockers and triggering fallback redirects
-    const createMockWindow = (): Window => {
-      const mock = {
-        closed: false,
-        name: '_blank',
-        opener: window,
-        location: {
-          href: '',
-          assign: () => {},
-          replace: () => {},
-          reload: () => {},
-        },
-        document: {
-          write: () => {},
-          close: () => {},
-        },
-        focus: () => {},
-        blur: () => {},
-        close: () => {},
-        postMessage: () => {},
-        addEventListener: () => {},
-        removeEventListener: () => {},
-        dispatchEvent: () => false,
-      } as unknown as Window;
-      return mock;
-    };
 
     const interceptOpen = (...args: Parameters<typeof window.open>): Window | null => {
       const now = Date.now();
@@ -378,7 +385,7 @@ class AdBlockerEngine {
         this.registerBlockedAttempt(targetUrl, reason);
         // Return a mock window object so the ad script thinks the popup
         // succeeded and does not trigger fallback redirects
-        return createMockWindow();
+        return this.createMockWindow(window);
       }
 
       return this.originalWindowOpen ? this.originalWindowOpen.apply(window, args) : null;
@@ -652,6 +659,216 @@ class AdBlockerEngine {
         }
       });
       observer.observe(document.documentElement, { childList: true, subtree: true });
+    } catch (_) {}
+  }
+
+  private shouldShieldPopups(): boolean {
+    return this.level !== 'off' || Date.now() < this.suppressionUntil;
+  }
+
+  private isAllowedExternalLink(el: HTMLElement | null): boolean {
+    if (!el) return false;
+    const data = (el as any).dataset;
+    if (data && data.allowedLink === 'true') return true;
+    if (typeof el.closest === 'function' && el.closest('[data-allow-external]')) return true;
+    return false;
+  }
+
+  /**
+   * Hardens a same-origin iframe realm (the ad-stripped proxied player).
+   * Each iframe has its own JS realm, so window.open/HTMLAnchorElement/
+   * HTMLFormElement there are separate objects the parent patches never
+   * reach. Applies the popup trap, gesture tracking and click/submit
+   * shields inside the frame, plus a live scrubber that hides ad overlay
+   * containers and strips ad network iframes injected at runtime.
+   */
+  public hardenFrame(frameWin: Window) {
+    if (!frameWin || typeof (frameWin as any).document === 'undefined') return;
+    try {
+      const doc: Document = (frameWin as any).document;
+      if (!doc || !doc.documentElement) return;
+    } catch (_) {
+      // Cross-origin (direct embed) — nothing we can reach; server shield/proxy handles it
+      return;
+    }
+
+    // 1. window.open trap inside the frame realm
+    try {
+      const fnWin = frameWin as any;
+      let frameOriginalOpen: Function | null = null;
+      try {
+        frameOriginalOpen = fnWin.open.bind(frameWin);
+      } catch (_) {
+        frameOriginalOpen = null;
+      }
+      const frameOpenTrap = (...args: any[]): any => {
+        const targetUrl = args[0] ? String(args[0]) : '';
+        const isAdTarget = targetUrl ? this.looksLikeAdUrl(targetUrl) : false;
+        const isKnownAd = targetUrl ? this.isAdDomain(targetUrl) : false;
+        const isUnsafeScheme = /^(javascript|data|vbscript):/i.test(targetUrl);
+        let block = false;
+        let reason = '';
+        if (Date.now() < this.suppressionUntil) {
+          block = true;
+          reason = 'suppression window';
+        } else if (this.level === 'strict') {
+          block = true;
+          reason = 'strict mode (frame)';
+        } else if (this.level === 'balanced') {
+          if (isAdTarget || isUnsafeScheme) {
+            block = true;
+            reason = 'ad/popup URL signature (frame)';
+          } else if (!this.isUserGestureRecent()) {
+            block = true;
+            reason = 'no recent user gesture (frame popunder)';
+          }
+        } else if (isKnownAd || isUnsafeScheme) {
+          block = true;
+          reason = 'known ad host override (frame)';
+        }
+        if (block) {
+          this.registerBlockedAttempt(targetUrl, reason);
+          return this.createMockWindow(frameWin);
+        }
+        return frameOriginalOpen ? frameOriginalOpen.apply(frameWin, args) : null;
+      };
+      try {
+        fnWin.open = frameOpenTrap;
+      } catch (_) {}
+      try {
+        (frameWin as any).Object.defineProperty(fnWin, 'open', {
+          value: frameOpenTrap,
+          writable: false,
+          configurable: false,
+        });
+      } catch (_) {}
+    } catch (_) {}
+
+    // 2. Programmatic anchor/form escapes inside the frame realm
+    try {
+      const fnWin = frameWin as any;
+      const Anchor = fnWin.HTMLAnchorElement;
+      if (Anchor && Anchor.prototype) {
+        const origAnchorClick = Anchor.prototype.click;
+        Anchor.prototype.click = function (this: any) {
+          if (adBlocker.shouldShieldPopups() && !adBlocker.isAllowedExternalLink(this)) {
+            const blankOrTop = this.target === '_blank' || this.target === '_top';
+            const href = String(this.href || '');
+            if (blankOrTop) {
+              adBlocker.recordBlockedPopup();
+              console.info('🛡️ [AdBlocker] Frame: blocked target="_blank" click:', href);
+              return;
+            }
+            if (adBlocker.isAdDomain(href)) {
+              adBlocker.recordAdFiltered();
+              console.info('🛡️ [AdBlocker] Frame: blocked ad navigation:', href);
+              return;
+            }
+          }
+          return origAnchorClick.apply(this);
+        };
+      }
+    } catch (_) {}
+
+    try {
+      const fnWin = frameWin as any;
+      const Form = fnWin.HTMLFormElement;
+      if (Form && Form.prototype) {
+        const origSubmit = Form.prototype.submit;
+        Form.prototype.submit = function (this: any) {
+          if (adBlocker.shouldShieldPopups() && (this.target === '_blank' || this.target === '_top')) {
+            adBlocker.recordBlockedPopup();
+            console.info('🛡️ [AdBlocker] Frame: blocked form popup submit:', this.action);
+            return;
+          }
+          return origSubmit.apply(this);
+        };
+        if (Form.prototype.requestSubmit) {
+          const origRequestSubmit = Form.prototype.requestSubmit;
+          Form.prototype.requestSubmit = function (this: any, submitter?: HTMLElement | null) {
+            if (adBlocker.shouldShieldPopups() && (this.target === '_blank' || this.target === '_top')) {
+              adBlocker.recordBlockedPopup();
+              return;
+            }
+            return origRequestSubmit.apply(this, [submitter]);
+          };
+        }
+      }
+    } catch (_) {}
+
+    // 3. Gesture tracking inside the frame (feeds shared engine fields)
+    try {
+      const fnWin = frameWin as any;
+      const mark = () => this.markUserGesture();
+      ['pointerdown', 'touchstart', 'mousedown', 'keydown', 'click'].forEach((evt) => {
+        fnWin.addEventListener(evt, mark, { capture: true, passive: true });
+      });
+    } catch (_) {}
+
+    // 4. Capture-phase link/popunder shields inside the frame
+    try {
+      const fnWin = frameWin as any;
+      const linkShield = (event: Event) => {
+        if (!this.shouldShieldPopups()) return;
+        const anchor = (event.target as any)?.closest?.('a') as any;
+        if (!anchor || !anchor.href) return;
+        if (this.isAllowedExternalLink(anchor)) return;
+        const blanket = anchor.target === '_blank' || anchor.target === '_top';
+        const adHref = this.isAdDomain(String(anchor.href));
+        if (blanket || adHref) {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          if (blanket) this.recordBlockedPopup();
+          else this.recordAdFiltered();
+        }
+      };
+      fnWin.addEventListener('click', linkShield, true);
+      fnWin.addEventListener('auxclick', linkShield, true);
+      fnWin.addEventListener('submit', (event: Event) => {
+        if (!this.shouldShieldPopups()) return;
+        const form = event.target as any;
+        if (form && (form.target === '_blank' || form.target === '_top')) {
+          if (!this.isAllowedExternalLink(form)) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            this.recordBlockedPopup();
+          }
+        }
+      }, true);
+    } catch (_) {}
+
+    // 5. Live scrubber inside the frame document: hide ad overlay slots and
+    //    strip runtime-injected ad network iframes (the runtime DOM the
+    //    server-side CSP cannot predict).
+    try {
+      const doc = (frameWin as any).document;
+      const scrubStyle = doc.createElement('style');
+      scrubStyle.textContent =
+        'div.ads-container,.ad-slot,.ad-banner,.ad-unit,.adsbygoogle,[id*="ads-container"],[class*="-ad-slot"]{display:none !important;pointer-events:none !important}';
+      (doc.head || doc.documentElement).appendChild(scrubStyle);
+
+      const sweep = () => {
+        try {
+          doc.querySelectorAll('iframe').forEach((f) => {
+            const src = String((f as any).src || '');
+            if (src && this.isAdDomain(src)) {
+              (f as any).remove();
+              this.recordAdFiltered();
+              console.info('🛡️ [AdBlocker] Frame: stripped ad iframe:', src);
+            }
+          });
+          doc.querySelectorAll('div.ads-container').forEach((el) => {
+            (el as any).style.setProperty('display', 'none', 'important');
+          });
+        } catch (_) {}
+      };
+      sweep();
+      try {
+        const observe = new (frameWin as any).MutationObserver(sweep);
+        observe.observe(doc.documentElement, { childList: true, subtree: true });
+      } catch (_) {}
     } catch (_) {}
   }
 

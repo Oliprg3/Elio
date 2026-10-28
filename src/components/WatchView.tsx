@@ -93,6 +93,34 @@ export const WatchView: React.FC<WatchViewProps> = ({
   const [adBlockLevel, setAdBlockLevel] = useState<AdBlockLevel>(adBlocker.getLevel());
   const [playerNotification, setPlayerNotification] = useState<string | null>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
+  const playerFrameRef = useRef<HTMLIFrameElement | null>(null);
+
+  // Harden the SAME-ORIGIN player frame (the server-side shield proxy path):
+  // the proxy re-serves provider embeds from our own origin, so we can reach
+  // into the frame realm and apply the popup trap + live ad scrubber there.
+  // Direct cross-origin embeds cannot be hardened client-side — the sandbox
+  // (vidzee) or the proxy's CSP (all providers on the node server) covers them.
+  const hardenPlayerFrame = () => {
+    const frameEl = playerFrameRef.current;
+    if (!frameEl) return;
+    let frameWin: Window | null = null;
+    try {
+      frameWin = frameEl.contentWindow;
+      if (!frameWin) return;
+      const doc = (frameWin as any).document;
+      if (!doc || !doc.documentElement) return;
+      adBlocker.hardenFrame(frameWin);
+
+      // Scrub overlays that render before the harden pass observer kicks in
+      try {
+        doc.querySelectorAll('div.ads-container').forEach((el: any) => {
+          el.style.setProperty('display', 'none', 'important');
+        });
+      } catch (_) {}
+    } catch (_) {
+      // Cross-origin frame — inaccessible by design
+    }
+  };
 
   // Initialize AdBlocker engine silently
   useEffect(() => {
@@ -783,6 +811,8 @@ export const WatchView: React.FC<WatchViewProps> = ({
               </div>
             ) : (
               <iframe
+                ref={playerFrameRef}
+                onLoad={hardenPlayerFrame}
                 key={`${streamUrl}-${playerKey}-${adBlockLevel}-${useShieldProxy}`}
                 id="cinestream-player-frame"
                 src={streamUrl}
