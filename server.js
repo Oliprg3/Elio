@@ -136,9 +136,29 @@ function collectInlineScriptHashes(html) {
   return hashes;
 }
 
+// Provider shells frequently nest the actual player from a second origin
+// (e.g. VidZee loads vaplayer.ru inside its embed). Extract those origins from
+// the page so the per-page CSP frame-src allowlist includes them; otherwise
+// the strict default-src 'none' policy silently kills the inner player.
+function collectNestedIframeOrigins(html) {
+  const origins = new Set();
+  const re = /<iframe\b[^>]*\bsrc=["']([^"']+)["']/gi;
+  let match;
+  while ((match = re.exec(html)) !== null) {
+    try {
+      const url = new URL(match[1], 'https://invalid.internal/');
+      if ((url.protocol === 'https:' || url.protocol === 'http:') && !AD_HOST_PATTERN.test(url.hostname)) {
+        origins.add(url.origin);
+      }
+    } catch (_) {}
+  }
+  return [...origins];
+}
+
 function buildShieldCsp(origin, provider, html) {
   const upstreamOrigin = PROXIED_PROVIDERS[provider] || PROXIED_PROVIDERS.vidzee;
   const own = `${origin}${PROXY_PREFIX}/${provider}`;
+  const nested = collectNestedIframeOrigins(html).join(' ');
   return [
     `default-src 'none'`,
     `script-src ${origin}${PROXY_PREFIX}/assets/ ${own}/assets/ ${own}/_next/ ${collectInlineScriptHashes(html).join(' ')} 'wasm-unsafe-eval' 'unsafe-eval'`,
@@ -148,7 +168,7 @@ function buildShieldCsp(origin, provider, html) {
     `media-src * data: blob:`,
     `connect-src https: data: blob:`,
     `worker-src ${origin}${PROXY_PREFIX}/assets/ ${own}/assets/ ${own}/_next/ blob:`,
-    `frame-src ${origin} ${upstreamOrigin}`,
+    `frame-src ${origin} ${upstreamOrigin} ${nested}`.trim(),
     `object-src 'none'`,
     `base-uri 'none'`,
   ].join('; ');
