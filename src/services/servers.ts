@@ -56,16 +56,17 @@ export const STREAM_SERVERS: StreamServer[] = [
 // Cross-origin status codes are unreadable from the browser, but a plain
 // <img> load of the provider's favicon distinguishes a healthy host (valid
 // image bytes -> onload) from an outage (Cloudflare 5xx error pages return
-// text/plain -> onerror). Results are cached per origin per session.
+// text/plain -> onerror). Several paths are tried in order because hosts
+// differ: VidZee only ships /favicon.svg while others answer /favicon.ico.
+// Results are cached per origin per session.
 // ---------------------------------------------------------------------------
 
 const providerAliveCache = new Map<string, Promise<boolean>>();
 
-export function probeProviderAlive(origin: string): Promise<boolean> {
-  const cached = providerAliveCache.get(origin);
-  if (cached) return cached;
+const ALIVE_PROBE_PATHS = ['/favicon.svg', '/favicon.ico', '/favicon.png', '/apple-touch-icon.png'];
 
-  const probe = new Promise<boolean>((resolve) => {
+function probeFaviconPath(origin: string, path: string): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
     if (typeof window === 'undefined' || typeof window.Image === 'undefined') {
       resolve(true);
       return;
@@ -80,9 +81,21 @@ export function probeProviderAlive(origin: string): Promise<boolean> {
     img.onload = () => finish(true);
     img.onerror = () => finish(false);
     img.referrerPolicy = 'no-referrer';
-    window.setTimeout(() => finish(false), 7000);
-    img.src = `${origin}/favicon.ico?elio=${Date.now()}`;
+    window.setTimeout(() => finish(false), 5000);
+    img.src = `${origin}${path}?elio=${Date.now()}`;
   });
+}
+
+export function probeProviderAlive(origin: string): Promise<boolean> {
+  const cached = providerAliveCache.get(origin);
+  if (cached) return cached;
+
+  const probe = (async () => {
+    for (const path of ALIVE_PROBE_PATHS) {
+      if (await probeFaviconPath(origin, path)) return true;
+    }
+    return false;
+  })();
 
   providerAliveCache.set(origin, probe);
   return probe;
