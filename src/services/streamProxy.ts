@@ -1,5 +1,5 @@
 // Detects whether the app is served by the shielded server (server.js), which
-// provides multi-provider, ad-stripped player proxies under /player-proxy/.
+// provides an ad-stripped VidZee player proxy under /player-proxy/.
 // Falls back to raw embeds when the proxy is unavailable (static hosting,
 // GitHub Pages or the Android APK).
 
@@ -26,7 +26,6 @@ export function probeStreamProxy(): Promise<boolean> {
  * Maps a provider id + upstream path (without origin) to the shielded proxy
  * route served by server.js.
  *   vidzee:  /embed/movie/:id          -> /player-proxy/embed/movie/:id
- *   vidfast: /movie/:id                -> /player-proxy/vidfast/movie/:id
  */
 export function proxiedEmbedUrl(serverId: string, upstreamPath: string): string {
   if (serverId === 'vidzee') {

@@ -102,7 +102,7 @@ export interface UserSettings {
 }
 
 const DEFAULT_SETTINGS: UserSettings = {
-  preferredServer: 'cinemaos',
+  preferredServer: 'vidzee',
   tmdbApiKey: '',
   autoNextEpisode: true,
   qualityPreference: '1080p',

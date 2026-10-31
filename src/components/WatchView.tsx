@@ -43,7 +43,6 @@ import { RelatedMediaSection } from './RelatedMediaSection';
 import { DownloadMediaModal } from './DownloadMediaModal';
 import { adBlocker, AdBlockLevel } from '../services/adBlocker';
 import { probeStreamProxy, proxiedEmbedUrl } from '../services/streamProxy';
-import { pickFirstAliveProvider } from '../services/servers';
 
 interface WatchViewProps {
   type: 'movie' | 'tv';
@@ -189,29 +188,8 @@ export const WatchView: React.FC<WatchViewProps> = ({
     };
   }, []);
 
-  // Auto-fallback: hop to the next healthy provider when the current one is
-  // unreachable (e.g. VidZee suffering a Cloudflare 522 outages). Runs per
-  // media open; never loops back to the saved preference unless it is alive.
-  const serverIndexRef = useRef(serverIndex);
-  useEffect(() => {
-    serverIndexRef.current = serverIndex;
-  }, [serverIndex]);
-
-  useEffect(() => {
-    let alive = true;
-    pickFirstAliveProvider(serverIndexRef.current, type, id).then((idx) => {
-      if (alive && idx !== serverIndexRef.current) {
-        setServerIndex(idx);
-        setForceDirect(false);
-        setPlayerNotification(`Auto-switched to ${STREAM_SERVERS[idx].name}`);
-        setTimeout(() => setPlayerNotification(null), 3000);
-      }
-    });
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, type]);
+  // Auto-fallback removed: VidZee is the only provider now, so there is
+  // nothing to hop to and no probe needed.
 
   // Sync state instantly if type or id changes
   useEffect(() => {
@@ -718,7 +696,9 @@ export const WatchView: React.FC<WatchViewProps> = ({
               </button>
             )}
 
-            {/* Switch Stream Source (providers sometimes suffer outages) */}
+            {/* Switch Stream Source — only shown when more than one provider
+                is configured (single-provider build hides it). */}
+            {STREAM_SERVERS.length > 1 && (
             <button
               id="btn-switch-server"
               onClick={() => {
@@ -737,6 +717,7 @@ export const WatchView: React.FC<WatchViewProps> = ({
               <Server className="w-3.5 h-3.5 text-zinc-400" />
               <span className="hidden sm:inline">{streamServer.name}</span>
             </button>
+            )}
 
 
             {/* Zero Pop-up Protection Shield Indicator */}
@@ -843,10 +824,12 @@ export const WatchView: React.FC<WatchViewProps> = ({
                 allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
                 referrerPolicy="origin"
                 sandbox={
+                  // Proxied pages are served from our own origin and guarded
+                  // by a strict CSP. Do NOT sandbox them: sandbox flags are
+                  // inherited by nested iframes, and VidZee's real player
+                  // (vaplayer.ru) breaks when it inherits an opaque origin.
                   useShieldProxy
-                    ? isVidzee
-                      ? 'allow-scripts allow-presentation allow-pointer-lock allow-forms'
-                      : undefined
+                    ? undefined
                     : isVidzee
                       ? adBlocker.getIframeSandboxAttributes() || 'allow-scripts allow-same-origin allow-presentation allow-pointer-lock allow-forms'
                       : undefined

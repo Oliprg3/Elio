@@ -14,19 +14,10 @@ export const STREAM_QUALITIES: StreamQualityOption[] = [
   { id: 'auto', label: 'Auto', badge: 'Auto', bitrateNote: 'Adaptive' },
 ];
 
+// Single provider setup: VidZee only. Earlier the app rotated through
+// CinemaOS/VidFast/VidLink, but saved preferences and auto-switching kept
+// landing users on broken providers. VidZee is the one that plays.
 export const STREAM_SERVERS: StreamServer[] = [
-  {
-    id: 'cinemaos',
-    name: 'CinemaOS',
-    badge: 'HD',
-    getMovieUrl: (id) => `https://cinemaos.tech/player/${id}?theme=ffffff`,
-    getTvUrl: (id, s, e) => `https://cinemaos.tech/player/${id}/${s}/${e}?theme=ffffff`,
-    getProxyPath: (type, id, s, e) =>
-      type === 'movie' ? `/player/${id}` : `/player/${id}/${s}/${e}`,
-    // Their WAF answers 403 for /favicon.ico, so the image probe would always
-    // call this (working) provider dead. Opt out of the auto-probe.
-    skipAliveProbe: true,
-  },
   {
     id: 'vidzee',
     name: 'VidZee',
@@ -34,109 +25,4 @@ export const STREAM_SERVERS: StreamServer[] = [
     getMovieUrl: (id) => `https://player.vidzee.wtf/embed/movie/${id}?lang=en&sub=en`,
     getTvUrl: (id, s, e) => `https://player.vidzee.wtf/embed/tv/${id}/${s}/${e}?lang=en&sub=en`,
   },
-  {
-    id: 'vidfast',
-    name: 'VidFast',
-    badge: 'Fast',
-    getMovieUrl: (id) => `https://vidfast.vc/movie/${id}`,
-    getTvUrl: (id, s, e) => `https://vidfast.vc/tv/${id}/${s}/${e}`,
-  },
-  {
-    id: 'vidlink',
-    name: 'VidLink',
-    badge: 'Backup',
-    getMovieUrl: (id) => `https://vidlink.pro/movie/${id}`,
-    getTvUrl: (id, s, e) => `https://vidlink.pro/tv/${id}/${s}/${e}`,
-  },
 ];
-
-// ---------------------------------------------------------------------------
-// Provider health probing (auto-fallback)
-//
-// Cross-origin status codes are unreadable from the browser, but a plain
-// <img> load of the provider's favicon distinguishes a healthy host (valid
-// image bytes -> onload) from an outage (Cloudflare 5xx error pages return
-// text/plain -> onerror). Several paths are tried in order because hosts
-// differ: VidZee only ships /favicon.svg while others answer /favicon.ico.
-// Results are cached per origin per session.
-// ---------------------------------------------------------------------------
-
-const providerAliveCache = new Map<string, Promise<boolean>>();
-
-const ALIVE_PROBE_PATHS = ['/favicon.svg', '/favicon.ico', '/favicon.png', '/apple-touch-icon.png'];
-
-function probeFaviconPath(origin: string, path: string): Promise<boolean> {
-  return new Promise<boolean>((resolve) => {
-    if (typeof window === 'undefined' || typeof window.Image === 'undefined') {
-      resolve(true);
-      return;
-    }
-    const img = new window.Image();
-    let settled = false;
-    const finish = (ok: boolean) => {
-      if (settled) return;
-      settled = true;
-      resolve(ok);
-    };
-    img.onload = () => finish(true);
-    img.onerror = () => finish(false);
-    img.referrerPolicy = 'no-referrer';
-    window.setTimeout(() => finish(false), 5000);
-    img.src = `${origin}${path}?elio=${Date.now()}`;
-  });
-}
-
-export function probeProviderAlive(origin: string): Promise<boolean> {
-  const cached = providerAliveCache.get(origin);
-  if (cached) return cached;
-
-  const probe = (async () => {
-    for (const path of ALIVE_PROBE_PATHS) {
-      if (await probeFaviconPath(origin, path)) return true;
-    }
-    return false;
-  })();
-
-  providerAliveCache.set(origin, probe);
-  return probe;
-}
-
-function originOfServer(server: StreamServer, type: 'movie' | 'tv', id: number | string): string {
-  try {
-    const url = type === 'movie' ? server.getMovieUrl(id) : server.getTvUrl(id, 1, 1);
-    return new URL(url).origin;
-  } catch {
-    return '';
-  }
-}
-
-/**
- * Returns the first provider index that passes the health probe, starting
- * with the currently preferred one and then walking the list in display
- * order (CinemaOS first). Providers flagged skipAliveProbe count as alive
- * because their WAF blocks favicon probes entirely. Keeps the current
- * provider when it is alive, skipped, or when everything probes dead.
- */
-export function pickFirstAliveProvider(
-  startIndex: number,
-  type: 'movie' | 'tv',
-  id: number | string
-): Promise<number> {
-  return (async () => {
-    if (startIndex < 0 || startIndex >= STREAM_SERVERS.length) return startIndex;
-
-    const order = [startIndex];
-    for (let i = 0; i < STREAM_SERVERS.length; i++) {
-      if (i !== startIndex) order.push(i);
-    }
-
-    for (const idx of order) {
-      if (STREAM_SERVERS[idx].skipAliveProbe) return idx;
-      const origin = originOfServer(STREAM_SERVERS[idx], type, id);
-      if (!origin) continue;
-      const alive = await probeProviderAlive(origin);
-      if (alive) return idx;
-    }
-    return startIndex;
-  })();
-}

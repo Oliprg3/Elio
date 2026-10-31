@@ -24,10 +24,7 @@ const port = process.env.PORT || 3000;
 // ---------------------------------------------------------------------------
 
 const PROXIED_PROVIDERS = {
-  cinemaos: 'https://cinemaos.tech',
   vidzee: 'https://player.vidzee.wtf',
-  vidfast: 'https://vidfast.vc',
-  vidlink: 'https://vidlink.pro',
 };
 
 const PROXY_PREFIX = '/player-proxy';
@@ -168,7 +165,8 @@ function buildShieldCsp(origin, provider, html) {
     `media-src * data: blob:`,
     `connect-src https: data: blob:`,
     `worker-src ${origin}${PROXY_PREFIX}/assets/ ${own}/assets/ ${own}/_next/ blob:`,
-    `frame-src ${origin} ${upstreamOrigin} ${nested}`.trim(),
+    `frame-src ${origin} ${upstreamOrigin} ${nested} https:`,
+
     `object-src 'none'`,
     `base-uri 'none'`,
   ].join('; ');
@@ -200,6 +198,13 @@ async function serveShieldedEmbed(req, res, upstreamPath, provider = 'vidzee') {
     // 1. Strip script tags pointing at known ad hosts (umommy.cyou lives here)
     html = html.replace(
       /<script\b[^>]*\bsrc="([^"]*)"[^>]*>\s*<\/script>/gi,
+      (tag, src) => (AD_HOST_PATTERN.test(src) ? '' : tag)
+    );
+
+    // 1b. Strip iframes pointing at known ad hosts as well; frame-src below
+    // permits https frames so the provider's dynamic player origin works.
+    html = html.replace(
+      /<iframe\b[^>]*\bsrc="([^"]*)"[^>]*>(?:\s*<\/iframe>)?/gi,
       (tag, src) => (AD_HOST_PATTERN.test(src) ? '' : tag)
     );
 
@@ -278,8 +283,8 @@ app.get('/player-proxy/assets/:asset', async (req, res) => {
 });
 
 // Generic per-provider passthrough: HTML embeds, assets and their API calls.
-// /player-proxy/vidfast/movie/:id        -> vidfast.vc/movie/:id
-// /player-proxy/vidfast/tv/:id/:s/:e     -> vidfast.vc/tv/:id/:s/:e
+// /player-proxy/vidzee/embed/movie/:id   -> player.vidzee.wtf/embed/movie/:id
+// /player-proxy/vidzee/embed/tv/:id/:s/:e-> player.vidzee.wtf/embed/tv/:id/:s/:e
 // /player-proxy/<p>/assets/<a>           -> upstream /assets/<a>
 // /player-proxy/<p>/<anything>           -> upstream /<anything>
 app.get(`${PROXY_PREFIX}/:provider/*`, async (req, res) => {
@@ -338,6 +343,10 @@ app.get(`${PROXY_PREFIX}/:provider/*`, async (req, res) => {
       const assetPrefix = `${origin}${PROXY_PREFIX}/${provider}/assets/`;
       html = html.replace(
         /<script\b[^>]*\bsrc="([^"]*)"[^>]*>\s*<\/script>/gi,
+        (tag, src) => (AD_HOST_PATTERN.test(src) ? '' : tag)
+      );
+      html = html.replace(
+        /<iframe\b[^>]*\bsrc="([^"]*)"[^>]*>(?:\s*<\/iframe>)?/gi,
         (tag, src) => (AD_HOST_PATTERN.test(src) ? '' : tag)
       );
       html = html

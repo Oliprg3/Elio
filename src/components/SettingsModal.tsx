@@ -17,7 +17,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [settings, setSettingsState] = useState<UserSettings>(getSettings());
   const [apiKeyInput, setApiKeyInput] = useState('');
-  const [preferredServer, setPreferredServer] = useState('cinemaos');
+  const [preferredServer, setPreferredServer] = useState('vidzee');
   const [adBlockLevel, setAdBlockLevel] = useState<AdBlockLevel>(adBlocker.getLevel());
   const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [tvMode, setTvMode] = useState(() => detectIsTVDevice());
@@ -33,7 +33,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const current = getSettings();
       setSettingsState(current);
       setApiKeyInput(current.tmdbApiKey || '');
-      setPreferredServer(current.preferredServer || 'cinemaos');
+      setPreferredServer(current.preferredServer || 'vidzee');
       setAdBlockLevel(adBlocker.getLevel());
       setShowInstallGuide(false);
     }
