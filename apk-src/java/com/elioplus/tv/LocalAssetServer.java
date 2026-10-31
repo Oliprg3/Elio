@@ -9,8 +9,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.ServerSocket;
+import java.net.URL;
 import java.net.Socket;
 import java.net.URLDecoder;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -119,6 +121,12 @@ public class LocalAssetServer {
             if (path.startsWith("/__update__/")) {
                 String name = path.substring("/__update__/".length());
                 if (name.length() > 0 && !name.contains("..") && !name.contains("\\")) {
+                    // Prefer the live APK from the deployed site so installed
+                    // builds can actually move forward; the bundled payload
+                    // below is only an offline fallback.
+                    if (serveRemoteUpdate(client, name)) {
+                        return;
+                    }
                     try {
                         InputStream up = ctx.getAssets().open("selfupdate/" + name);
                         byte[] body = readAll(up);
@@ -270,6 +278,52 @@ public class LocalAssetServer {
 
         public void run() {
             server.handleConnection(client);
+        }
+    }
+
+    /**
+     * Streams the current APK straight from the deployed web service. Without
+     * this the /__update__/ route could only ever serve the APK bundled at
+     * build time, which is one release behind the installed app.
+     */
+    private boolean serveRemoteUpdate(Socket client, String name) {
+        HttpURLConnection conn = null;
+        try {
+            URL url = new URL("https://elio-e5re.onrender.com/" + name);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(30000);
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("User-Agent", "elio-native-shell");
+            if (conn.getResponseCode() != 200) {
+                return false;
+            }
+            int len = conn.getContentLength();
+            InputStream in = conn.getInputStream();
+            StringBuilder head = new StringBuilder();
+            head.append("HTTP/1.0 200 OK\r\n");
+            head.append("Content-Type: application/vnd.android.package-archive\r\n");
+            head.append("Content-Disposition: attachment; filename=\"").append(name).append("\"\r\n");
+            if (len > 0) {
+                head.append("Content-Length: ").append(len).append("\r\n");
+            }
+            head.append("Cache-Control: no-store\r\n\r\n");
+            OutputStream out = new BufferedOutputStream(client.getOutputStream(), 1 << 16);
+            out.write(head.toString().getBytes("ISO-8859-1"));
+            byte[] buf = new byte[1 << 16];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+            }
+            out.flush();
+            try { in.close(); } catch (Throwable ignored) { }
+            return true;
+        } catch (Throwable t) {
+            return false;
+        } finally {
+            if (conn != null) {
+                try { conn.disconnect(); } catch (Throwable ignored) { }
+            }
         }
     }
 }
