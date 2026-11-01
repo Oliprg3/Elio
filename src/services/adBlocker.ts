@@ -846,7 +846,7 @@ class AdBlockerEngine {
       const doc = (frameWin as any).document;
       const scrubStyle = doc.createElement('style');
       scrubStyle.textContent =
-        'div.ads-container,.ad-slot,.ad-banner,.ad-unit,.adsbygoogle,[id*="ads-container"],[class*="-ad-slot"]{display:none !important;pointer-events:none !important}';
+        'div.ad-inline-ad,.ad-slot,.ad-banner,.ad-unit,.adsbygoogle,[id*="ad-slot"],[class*="-ad-slot"]{display:none !important;pointer-events:none !important}';
       (doc.head || doc.documentElement).appendChild(scrubStyle);
 
       const sweep = () => {
@@ -859,7 +859,7 @@ class AdBlockerEngine {
               console.info('🛡️ [AdBlocker] Frame: stripped ad iframe:', src);
             }
           });
-          doc.querySelectorAll('div.ads-container').forEach((el) => {
+          doc.querySelectorAll('div.ads-container > .ad-slot, div.adsbygoogle').forEach((el) => {
             (el as any).style.setProperty('display', 'none', 'important');
           });
         } catch (_) {}

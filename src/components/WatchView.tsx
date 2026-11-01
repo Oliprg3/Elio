@@ -133,7 +133,7 @@ export const WatchView: React.FC<WatchViewProps> = ({
 
       // Scrub overlays that render before the harden pass observer kicks in
       try {
-        doc.querySelectorAll('div.ads-container').forEach((el: any) => {
+        doc.querySelectorAll('div.ad-inline-ad, div.adsbygoogle').forEach((el: any) => {
           el.style.setProperty('display', 'none', 'important');
         });
       } catch (_) {}

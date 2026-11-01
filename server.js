@@ -12,7 +12,7 @@ const port = process.env.PORT || 3000;
 // ---------------------------------------------------------------------------
 // Stream Shield Proxy (multi-provider)
 // ---------------------------------------------------------------------------
-// Embed providers inject their own ad overlays (ads-container divs, obfuscated
+// Embed providers inject their own ad overlays (inline ad units, obfuscated
 // ad frameworks such as umommy.cyou) inside their iframes. Cross-origin parent
 // pages cannot remove that DOM, so we re-serve the embeds from our own origin:
 //   1. known ad scripts stripped from the HTML
@@ -48,8 +48,7 @@ const AD_HOST_PATTERN = new RegExp(
 
 const SHIELD_CSS =
   'html,body{background:#000 !important;color:#fff !important}' +
-  'div.ads-container{display:none !important;pointer-events:none !important}' +
-  'div.ads-container *{display:none !important}' +
+  'div.ads-inline-ad,.adsbygoogle{display:none !important}' +
   '.ad-slot,.ad-banner,.ad-container,.adsbygoogle,#ad-slot,[class*="-ad-slot"]{display:none !important}' +
   'html{overflow:auto}';
 
