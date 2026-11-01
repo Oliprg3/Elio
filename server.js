@@ -236,36 +236,61 @@ function buildShieldCsp(origin, provider, html) {
 }
 
 function serveShieldedEmbed(req, res, upstreamPath, provider = 'vidzee') {
-  // Serve OUR OWN minimal player page instead of VidZee's shell. Their embed
-  // is a multilayer chain (core API with rotating auth params, vaplayer with
-  // an anti-sandbox kill switch, Cloudflare Turnstile) that breaks whenever
-  // one layer changes. The vaplayer loader accepts plain iframes and carries
-  // the full chain, so embedding it directly is the stable avenue.
+  // The VidZee chain is multilayer and one hop answers behind Cloudflare
+  // Turnstile, so embeddability is out of our control. Instead we load TWO
+  // independent chains in one frame: VidZee's own loader (vaplayer) and the
+  // VidLink player, stacked. Whichever chain signals progress first takes
+  // the screen; after 14s with no signal we show VidLink because it runs
+  // without a captcha hop.
   const match = String(upstreamPath || '').match(/\/?embed\/(movie|tv)\/(\d+)(?:\/(\d+)(?:\/(\d+))?)?/);
-  if (provider === 'vidzee' && match) {
-    const [, type, idStr, sStr, eStr] = match;
-    let src = `https://vaplayer.ru/embed/${type}/${encodeURIComponent(idStr)}`;
-    if (type === 'tv' && sStr) {
-      src += `/${encodeURIComponent(sStr)}/${encodeURIComponent(eStr || '1')}`;
-    }
-    const html =
-      '<!DOCTYPE html><html><head><meta charset="utf-8">' +
-      '<meta name="viewport" content="width=device-width,initial-scale=1">' +
-      '<title>elio+ player</title><style>html,body{margin:0;height:100%;background:#000}' +
-      'iframe{position:absolute;inset:0;width:100%;height:100%;border:0}</style></head>' +
-      `<body><iframe src="${src}" allowfullscreen target="_self" ` +
-      'allow="autoplay; encrypted-media; fullscreen; picture-in-picture" ' +
-      'referrerpolicy="origin"></iframe></body></html>';
-    console.log(`[shield] serving own VidZee player: ${src}`);
-    res.set('Content-Security-Policy',
-      "default-src 'none'; frame-src https:; style-src 'unsafe-inline'; img-src data: https:; " +
-      "form-action 'none'; base-uri 'none'");
-    res.set('X-Content-Type-Options', 'nosniff');
-    res.set('Referrer-Policy', 'origin');
-    res.set('Cache-Control', 'no-store');
-    return res.type('text/html; charset=utf-8').send(html);
+  if (provider !== 'vidzee' || !match) {
+    return serveShieldFallback(req, res, provider, 404);
   }
-  return serveShieldFallback(req, res, provider, 404);
+  const [, type, idStr, sStr, eStr] = match;
+  let vz = `https://vaplayer.ru/embed/${type}/${encodeURIComponent(idStr)}`;
+  let vl = `https://vidlink.pro/${type}/${encodeURIComponent(idStr)}`;
+  if (type === 'tv') {
+    const ep = sStr ? `/${encodeURIComponent(sStr)}${eStr ? `/${encodeURIComponent(eStr)}` : ''}` : '/1/1';
+    vz += ep; vl += ep;
+  }
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>elio+ player</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}
+iframe{position:absolute;inset:0;width:100%;height:100%;border:0;opacity:0;transition:opacity .5s}
+iframe.on{opacity:1}
+iframe.hidden{opacity:0;pointer-events:none}</style></head>
+<body>
+<iframe id="vz" referrerpolicy="origin" allowfullscreen allow="autoplay; encrypted-media; fullscreen; picture-in-picture" src="${vz}"></iframe>
+<iframe id="vl" referrerpolicy="origin" allowfullscreen allow="autoplay; encrypted-media; fullscreen; picture-in-picture" src="${vl}" class="hidden"></iframe>
+<script>
+(function(){
+  var vz=document.getElementById('vz'),vl=document.getElementById('vl');
+  var resolved=0;
+  function show(which){
+    if(resolved)return; resolved=1;
+    (which==='vz'?vl:vz).remove();
+    (which==='vz'?vz:vl).classList.remove('hidden');
+    (which==='vz'?vz:vl).classList.add('on');
+  }
+  window.addEventListener('message',function(e){
+    if(!e.isTrusted||!e.source)return;
+    var d=e.data;
+    if(!d||typeof d!=='object')return;
+    if(e.source===vz.contentWindow&&d.type==='PLAYER_TITLE'){show('vz');return;}
+    if(e.source===vl.contentWindow&&(d.type==='play'||d.type==='PLAYER_TITLE'||d.player==='vidlink')){show('vl');return;}
+  });
+  setTimeout(function(){show('vl');},14000);
+})();
+</script>
+</body></html>`;
+  console.log(`[shield] dual-chain player: ${vz} | ${vl}`);
+  res.set('Content-Security-Policy',
+    "default-src 'none'; script-src 'unsafe-inline'; frame-src https:; style-src 'unsafe-inline'; img-src data: https:; form-action 'none'; base-uri 'none'");
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Referrer-Policy', 'origin');
+  res.set('Cache-Control', 'no-store');
+  return res.type('text/html; charset=utf-8').send(html);
 }
 
 app.get(`${PROXY_PREFIX}/health`, (_req, res) => {
