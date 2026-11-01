@@ -25,6 +25,11 @@ const port = process.env.PORT || 3000;
 
 const PROXIED_PROVIDERS = {
   vidzee: 'https://player.vidzee.wtf',
+  // VidZee resolves its streams through a separate API host whose CORS
+  // allowlist only ever echoes *.vidzee.wtf origins, so the proxied embed
+  // cannot call it cross-origin. We route it through our own origin and
+  // rewrite the hardcoded base URL inside served JS chunks (see below).
+  core: 'https://core.vidzee.wtf',
 };
 
 const PROXY_PREFIX = '/player-proxy';
@@ -47,6 +52,25 @@ const SHIELD_CSS =
   '.ad-slot,.ad-banner,.ad-container,.adsbygoogle,#ad-slot,[class*="-ad-slot"]{display:none !important}' +
   'html{overflow:auto}';
 
+/**
+ * JS chunks hardcode provider API origins (VidZee embeds reference
+ * https://core.vidzee.wtf). Because those hosts do not send CORS headers for
+ * our origin, the proxied page would never receive its stream metadata. Swap
+ * each provider base URL for our per-provider proxy route so every call is
+ * same-origin.
+ */
+function rewriteProviderOrigins(buffer, contentType, req) {
+  if (!contentType.includes('javascript') && !contentType.includes('text/html')) {
+    return buffer;
+  }
+  const origin = shieldOrigin(req);
+  let text = buffer.toString('utf8');
+  for (const [id, upstreamOrigin] of Object.entries(PROXIED_PROVIDERS)) {
+    text = text.split(`${upstreamOrigin}`).join(`${origin}${PROXY_PREFIX}/${id}`);
+  }
+  return Buffer.from(text, 'utf8');
+}
+
 function shieldOrigin(req) {
   const host =
     req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000';
@@ -55,6 +79,9 @@ function shieldOrigin(req) {
 }
 
 function proxyHeaders(req, upstreamOrigin) {
+  const refererOrigin = upstreamOrigin === PROXIED_PROVIDERS.core
+    ? PROXIED_PROVIDERS.vidzee
+    : upstreamOrigin;
   return {
     'user-agent':
       req.headers['user-agent'] ||
@@ -63,7 +90,7 @@ function proxyHeaders(req, upstreamOrigin) {
     // Ask upstream for plain bytes so we can transform HTML and never
     // forward compressed payloads without their encoding headers
     'accept-encoding': 'identity',
-    referer: `${upstreamOrigin}/`,
+    referer: `${refererOrigin}/`,
   };
 }
 
@@ -74,6 +101,9 @@ const DESKTOP_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
 function browserImpersonationHeaders(upstreamOrigin) {
+  const refererOrigin = upstreamOrigin === PROXIED_PROVIDERS.core
+    ? PROXIED_PROVIDERS.vidzee
+    : upstreamOrigin;
   return {
     'user-agent': DESKTOP_UA,
     accept:
@@ -88,7 +118,7 @@ function browserImpersonationHeaders(upstreamOrigin) {
     'sec-fetch-site': 'none',
     'sec-fetch-user': '?1',
     'upgrade-insecure-requests': '1',
-    referer: `${upstreamOrigin}/`,
+    referer: `${refererOrigin}/`,
   };
 }
 
@@ -163,7 +193,7 @@ function buildShieldCsp(origin, provider, html) {
     `font-src https://fonts.gstatic.com data:`,
     `img-src * data: blob:`,
     `media-src * data: blob:`,
-    `connect-src https: data: blob:`,
+    `connect-src ${origin} https: http: ws: wss: data: blob:`,
     `worker-src ${origin}${PROXY_PREFIX}/assets/ ${own}/assets/ ${own}/_next/ blob:`,
     `frame-src ${origin} ${upstreamOrigin} ${nested} https:`,
 
@@ -295,17 +325,24 @@ app.get(`${PROXY_PREFIX}/:provider/*`, async (req, res) => {
     return res.status(404).type('text/plain').send('Unknown provider');
   }
 
+  // Preserve the caller's query string — provider APIs (core.vidzee.wtf
+  // /streams/...) refuse requests without their parameters.
+  const qs = new URLSearchParams(req.query).toString();
+  const suffix = qs ? `?${qs}` : '';
+
   // Assets served with long cache headers
   if (rest.startsWith('assets/') || rest.startsWith('_next/')) {
     try {
       const upstream = await fetchUpstreamResilient(
-        `${upstreamOrigin}/${rest}`,
+        `${upstreamOrigin}/${rest}${suffix}`,
         req,
         provider
       );
       if (!upstream.ok) return res.status(upstream.status).end();
-      const buffer = Buffer.from(await upstream.arrayBuffer());
-      res.set('Content-Type', upstream.headers.get('content-type') || 'application/octet-stream');
+      const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
+      let buffer = Buffer.from(await upstream.arrayBuffer());
+      buffer = rewriteProviderOrigins(buffer, contentType, req);
+      res.set('Content-Type', contentType);
       res.set('Cache-Control', 'public, max-age=600');
       return res.send(buffer);
     } catch (_) {
@@ -317,7 +354,7 @@ app.get(`${PROXY_PREFIX}/:provider/*`, async (req, res) => {
   // raw passthrough for the rest (API calls, JSON, subtitles etc.).
   try {
     const upstream = await fetchUpstreamResilient(
-      `${upstreamOrigin}/${rest}`,
+      `${upstreamOrigin}/${rest}${suffix}`,
       req,
       provider
     );
@@ -331,12 +368,18 @@ app.get(`${PROXY_PREFIX}/:provider/*`, async (req, res) => {
         );
         res.set('Cache-Control', 'no-store');
         const qs = new URLSearchParams(req.query);
-        const suffix = qs.toString() ? `?${qs.toString()}` : '';
         return res.redirect(302, `${upstreamOrigin}/${rest}${suffix}`);
       }
       return res.status(upstream.status).type('text/plain').send(`${provider} upstream ${upstream.status}`);
     }
     const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
+    if (contentType.includes('javascript')) {
+      let body = Buffer.from(await upstream.arrayBuffer());
+      body = rewriteProviderOrigins(body, contentType, req);
+      res.set('Content-Type', contentType);
+      res.set('Cache-Control', 'public, max-age=600');
+      return res.send(body);
+    }
     if (contentType.includes('text/html')) {
       let html = await upstream.text();
       const origin = shieldOrigin(req);
@@ -354,6 +397,7 @@ app.get(`${PROXY_PREFIX}/:provider/*`, async (req, res) => {
         .join(assetPrefix)
         .split('/_next/')
         .join(`${origin}${PROXY_PREFIX}/${provider}/_next/`);
+      html = rewriteProviderOrigins(Buffer.from(html), contentType, req).toString('utf8');
       html = html.replace('</head>', `<style>${SHIELD_CSS}</style></head>`);
       res.set('Content-Security-Policy', buildShieldCsp(origin, provider, html));
       res.set('X-Content-Type-Options', 'nosniff');
