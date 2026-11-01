@@ -47,6 +47,7 @@ const AD_HOST_PATTERN = new RegExp(
 );
 
 const SHIELD_CSS =
+  'html,body{background:#000 !important;color:#fff !important}' +
   'div.ads-container{display:none !important;pointer-events:none !important}' +
   'div.ads-container *{display:none !important}' +
   '.ad-slot,.ad-banner,.ad-container,.adsbygoogle,#ad-slot,[class*="-ad-slot"]{display:none !important}' +
@@ -69,6 +70,39 @@ function rewriteProviderOrigins(buffer, contentType, req) {
     text = text.split(`${upstreamOrigin}`).join(`${origin}${PROXY_PREFIX}/${id}`);
   }
   return Buffer.from(text, 'utf8');
+}
+
+/**
+ * Black in-frame fallback for upstream hiccups. Never sends the browser to
+ * the provider directly — VidZee answers X-Frame-Options: SAMEORIGIN and
+ * older WebViews render that block as a blank white page. The reload pins a
+ * no-store retry against the proxied URL itself.
+ */
+function serveShieldFallback(req, res, provider, status) {
+  const target = req.originalUrl.startsWith('/')
+    ? req.originalUrl
+    : `/${req.originalUrl}`;
+  const safeTarget = target
+    .replace(/&/g, '&amp;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;');
+  res.status(status).type('text/html; charset=utf-8');
+  res.set('Cache-Control', 'no-store');
+  res.set('X-Content-Type-Options', 'nosniff');
+  return res.send(
+    `<!DOCTYPE html><html><head><meta charset="utf-8">` +
+    `<meta name="viewport" content="width=device-width,initial-scale=1">` +
+    `<style>html,body{margin:0;background:#000;color:#9aa0a6;` +
+    `font:600 14px system-ui,sans-serif}</style></head><body>` +
+    `<div style="display:flex;flex-direction:column;gap:16px;align-items:center;` +
+    `justify-content:center;height:100vh;text-align:center;padding:0 24px">` +
+    `<div>Stream source busy &#8212; retrying in 4s&#8230;</div>` +
+    `<button id="retry" onclick="location.reload()" style="background:#e50914;` +
+    `color:#fff;border:0;border-radius:999px;padding:10px 22px;font-weight:800;` +
+    `font-size:13px;cursor:pointer">Start ${provider} again</button>` +
+    `</div><script>setTimeout(function(){location.replace('${safeTarget}')},4000)` +
+    `</script></body></html>`
+  );
 }
 
 function shieldOrigin(req) {
@@ -218,7 +252,7 @@ async function serveShieldedEmbed(req, res, upstreamPath, provider = 'vidzee') {
         `[shield] ${provider} embed failed (${upstream.status}) — redirecting frame to provider`
       );
       res.set('Cache-Control', 'no-store');
-      return res.redirect(302, `${upstreamOrigin}${upstreamPath}`);
+      return serveShieldFallback(req, res, provider, 503);
     }
 
     let html = await upstream.text();
@@ -262,7 +296,7 @@ async function serveShieldedEmbed(req, res, upstreamPath, provider = 'vidzee') {
     return res.type('text/html; charset=utf-8').send(html);
   } catch (err) {
     res.set('Cache-Control', 'no-store');
-    return res.status(502).type('text/html').send(`${provider} embed fetch failed`);
+    return serveShieldFallback(req, res, provider, 502);
   }
 }
 
@@ -368,7 +402,7 @@ app.get(`${PROXY_PREFIX}/:provider/*`, async (req, res) => {
         );
         res.set('Cache-Control', 'no-store');
         const qs = new URLSearchParams(req.query);
-        return res.redirect(302, `${upstreamOrigin}/${rest}${suffix}`);
+        return serveShieldFallback(req, res, provider, 503);
       }
       return res.status(upstream.status).type('text/plain').send(`${provider} upstream ${upstream.status}`);
     }
@@ -410,7 +444,7 @@ app.get(`${PROXY_PREFIX}/:provider/*`, async (req, res) => {
     res.set('Cache-Control', 'no-store');
     return res.send(buffer);
   } catch (_) {
-    return res.status(502).end();
+    return serveShieldFallback(req, res, provider, 502);
   }
 });
 
