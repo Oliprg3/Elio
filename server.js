@@ -235,68 +235,37 @@ function buildShieldCsp(origin, provider, html) {
   ].join('; ');
 }
 
-async function serveShieldedEmbed(req, res, upstreamPath, provider = 'vidzee') {
-  const upstreamOrigin = PROXIED_PROVIDERS[provider] || PROXIED_PROVIDERS.vidzee;
-  try {
-    const upstream = await fetchUpstreamResilient(
-      `${upstreamOrigin}${upstreamPath}`,
-      req,
-      provider
-    );
-    if (!upstream.ok) {
-      // Graceful degradation: rather than a dead error page inside the
-      // iframe, send the frame straight to the provider so the video
-      // still plays — ads remain inside the frame only.
-      console.warn(
-        `[shield] ${provider} embed failed (${upstream.status}) — redirecting frame to provider`
-      );
-      res.set('Cache-Control', 'no-store');
-      return serveShieldFallback(req, res, provider, 503);
+function serveShieldedEmbed(req, res, upstreamPath, provider = 'vidzee') {
+  // Serve OUR OWN minimal player page instead of VidZee's shell. Their embed
+  // is a multilayer chain (core API with rotating auth params, vaplayer with
+  // an anti-sandbox kill switch, Cloudflare Turnstile) that breaks whenever
+  // one layer changes. The vaplayer loader accepts plain iframes and carries
+  // the full chain, so embedding it directly is the stable avenue.
+  const match = String(upstreamPath || '').match(/\/?embed\/(movie|tv)\/(\d+)(?:\/(\d+)(?:\/(\d+))?)?/);
+  if (provider === 'vidzee' && match) {
+    const [, type, idStr, sStr, eStr] = match;
+    let src = `https://vaplayer.ru/embed/${type}/${encodeURIComponent(idStr)}`;
+    if (type === 'tv' && sStr) {
+      src += `/${encodeURIComponent(sStr)}/${encodeURIComponent(eStr || '1')}`;
     }
-
-    let html = await upstream.text();
-    const origin = shieldOrigin(req);
-    const assetPrefix = `${origin}${PROXY_PREFIX}/${provider}/assets/`;
-
-    // 1. Strip script tags pointing at known ad hosts (umommy.cyou lives here)
-    html = html.replace(
-      /<script\b[^>]*\bsrc="([^"]*)"[^>]*>\s*<\/script>/gi,
-      (tag, src) => (AD_HOST_PATTERN.test(src) ? '' : tag)
-    );
-
-    // 1b. Strip iframes pointing at known ad hosts as well; frame-src below
-    // permits https frames so the provider's dynamic player origin works.
-    html = html.replace(
-      /<iframe\b[^>]*\bsrc="([^"]*)"[^>]*>(?:\s*<\/iframe>)?/gi,
-      (tag, src) => (AD_HOST_PATTERN.test(src) ? '' : tag)
-    );
-
-    // 2. Rewrite root-relative asset URL references into the per-provider
-    // proxy namespace so every module chunk loads from our origin (CORS-clean
-    // + CSP-governed). Covers Vite-style /assets/ and Next.js-style /_next/
-    // chunks; a single generic pass covers quoted attributes and bracketed
-    // references inside hydration bootstrap data alike.
-    html = html
-      .split('/assets/')
-      .join(assetPrefix)
-      .split('/_next/')
-      .join(`${origin}${PROXY_PREFIX}/${provider}/_next/`);
-
-    // 3. Hide ad slots + neutralize popunder listeners inside the iframe
-    html = html.replace(
-      '</head>',
-      `<style>${SHIELD_CSS}</style></head>`
-    );
-
-    res.set('Content-Security-Policy', buildShieldCsp(origin, provider, html));
+    const html =
+      '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+      '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+      '<title>elio+ player</title><style>html,body{margin:0;height:100%;background:#000}' +
+      'iframe{position:absolute;inset:0;width:100%;height:100%;border:0}</style></head>' +
+      `<body><iframe src="${src}" allowfullscreen target="_self" ` +
+      'allow="autoplay; encrypted-media; fullscreen; picture-in-picture" ' +
+      'referrerpolicy="origin"></iframe></body></html>';
+    console.log(`[shield] serving own VidZee player: ${src}`);
+    res.set('Content-Security-Policy',
+      "default-src 'none'; frame-src https:; style-src 'unsafe-inline'; img-src data: https:; " +
+      "form-action 'none'; base-uri 'none'");
     res.set('X-Content-Type-Options', 'nosniff');
     res.set('Referrer-Policy', 'origin');
     res.set('Cache-Control', 'no-store');
     return res.type('text/html; charset=utf-8').send(html);
-  } catch (err) {
-    res.set('Cache-Control', 'no-store');
-    return serveShieldFallback(req, res, provider, 502);
   }
+  return serveShieldFallback(req, res, provider, 404);
 }
 
 app.get(`${PROXY_PREFIX}/health`, (_req, res) => {
@@ -385,6 +354,10 @@ app.get(`${PROXY_PREFIX}/:provider/*`, async (req, res) => {
 
   // Everything else: fetch first, then shield HTML responses (embed pages);
   // raw passthrough for the rest (API calls, JSON, subtitles etc.).
+  // VidZee embed pages get our own minimal player (see serveShieldedEmbed).
+  if (provider === 'vidzee' && /^\/?embed\/(movie|tv)\//.test(rest)) {
+    return serveShieldedEmbed(req, res, `/${rest}`, provider);
+  }
   try {
     const upstream = await fetchUpstreamResilient(
       `${upstreamOrigin}/${rest}${suffix}`,
