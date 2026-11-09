@@ -263,7 +263,7 @@ padding:8px 14px;font-size:12px;text-decoration:none;font-weight:700}
 #ughty span{align-self:center}
 </style></head>
 <body>
-<iframe id="pf" referrerpolicy="origin" allowfullscreen sandbox="allow-scripts allow-same-origin allow-presentation" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" src="${src}"></iframe>
+<iframe id="pf" referrerpolicy="origin" allowfullscreen allow="autoplay; encrypted-media; fullscreen; picture-in-picture" src="${src}"></iframe>
 <div id="ughty">
   <span id="ughty-msg">The stream source is busy &#8212; its bot-check keeps failing in this browser.</span>
   <button onclick="reloadFrame()">Try again</button>

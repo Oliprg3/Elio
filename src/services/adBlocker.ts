@@ -974,14 +974,11 @@ class AdBlockerEngine {
    * from redirecting the parent window or stealing the current tab.
    */
   public getIframeSandboxAttributes(): string | undefined {
-    if (this.level === 'off') {
-      return undefined;
-    }
-
-    // Include allow-popups so the provider's own activation windows and
-    // bot-check callbacks can open; popunders are still caught by the
-    // frame realm's open() trap, which only lets PLAYER_CHAIN_HOSTS pass.
-    return 'allow-scripts allow-same-origin allow-presentation allow-pointer-lock allow-forms allow-popups allow-popups-to-escape-sandbox';
+    // VidZee's chain (vaplayer) explicitly REFUSES to load inside any
+    // sandboxed frame ("Playback blocked — This player cannot be loaded
+    // inside a restricted (sandboxed) frame"). No iframe in the stream
+    // tree may carry a sandbox attribute, or the whole chain refuses.
+    return undefined;
   }
 }
 
