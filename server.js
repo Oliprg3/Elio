@@ -254,7 +254,7 @@ function serveShieldedEmbed(req, res, upstreamPath, provider = 'vidzee') {
 <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}
 iframe{position:absolute;inset:0;width:100%;height:100%;border:0}</style></head>
 <body>
-<iframe referrerpolicy="origin" allowfullscreen allow="autoplay; encrypted-media; fullscreen; picture-in-picture" src="${src}"></iframe>
+<iframe referrerpolicy="origin" allowfullscreen sandbox="allow-scripts allow-same-origin allow-presentation allow-pointer-lock" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" src="${src}"></iframe>
 </body></html>`;
   console.log(`[shield] vidzee player: ${src}`);
   res.set('Content-Security-Policy',
@@ -265,7 +265,14 @@ iframe{position:absolute;inset:0;width:100%;height:100%;border:0}</style></head>
   return res.type('text/html; charset=utf-8').send(html);
 }
 
+app.options(`${PROXY_PREFIX}/health`, (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  return res.status(204).end();
+});
+
 app.get(`${PROXY_PREFIX}/health`, (_req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
   res.json({ ok: true, providers: Object.keys(PROXIED_PROVIDERS) });
 });
 
