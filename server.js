@@ -254,34 +254,39 @@ function serveShieldedEmbed(req, res, upstreamPath, provider = 'vidzee') {
 <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}
 iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 #ughty{position:absolute;left:0;right:0;bottom:0;display:none;z-index:3;
-color:#9aa0a6;background:rgba(0,0,0,.75);font:600 13px system-ui,sans-serif;
-text-align:center;padding:10px 14px}
-button{background:#e50914;color:#fff;border:0;border-radius:999px;
+color:#9aa0a6;background:rgba(0,0,0,.78);font:600 13px system-ui,sans-serif;
+text-align:center;padding:10px 14px;gap:10px}
+#ughty button{background:#e50914;color:#fff;border:0;border-radius:999px;
 padding:8px 18px;font-weight:800;font-size:12px;cursor:pointer}
+#ughty a{color:#e8e8e8;background:#222;border:1px solid #333;border-radius:999px;
+padding:8px 14px;font-size:12px;text-decoration:none;font-weight:700}
+#ughty span{align-self:center}
 </style></head>
 <body>
 <iframe id="pf" referrerpolicy="origin" allowfullscreen sandbox="allow-scripts allow-same-origin allow-presentation" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" src="${src}"></iframe>
-<div id="ughty"><span>Source busy &#8212; the provider&#8217;s own bot-wall sometimes stalls the first load.</span>
-<button onclick="reloadFrame()">Try again</button></div>
+<div id="ughty">
+  <span id="ughty-msg">The stream source is busy &#8212; its bot-check keeps failing in this browser.</span>
+  <button onclick="reloadFrame()">Try again</button>
+  <a href="${src}" target="_blank" rel="noreferrer noopener">Open directly &#8599;</a>
+</div>
 <script>
 (function(){
   var tries = 0;
-  var settled = false;   // true once vaplayer signals the player is ready
+  var settled = false;
   var barShown = false;
 
   function bar(){ var d=document.getElementById('ughty'); if(d && !barShown){ barShown=true; d.style.display='flex'; } }
   function hide(){ var d=document.getElementById('ughty'); if(d){ d.style.display='none'; } }
 
-  // vaplayer postMessages PLAYER_TITLE once the chain is alive.
+  // vaplayer never signals readiness to us directly; treat any incoming
+  // vaplayer-origin message as 'the chain is alive' and clear the notice.
   window.addEventListener('message', function(ev){
     if (!ev || !ev.origin || String(ev.origin).indexOf('vaplayer.ru')===-1) return;
-    var s = '';
-    try { s = String(typeof ev.data==='string' ? ev.data : (ev.data && ev.data.type ? ev.data.type : ev.data)); } catch(_) { return; }
-    if (s.toLowerCase().indexOf('title') !== -1) { settled = true; tries = 99; hide(); }
+    settled = true; tries = 99; hide();
   });
 
   window.reloadFrame = function(){
-    if (settled || tries >= 2) { bar(); return; }
+    if (tries >= 2) { bar(); return; }
     tries++;
     var f = document.getElementById('pf');
     if (!f) return;
@@ -290,9 +295,9 @@ padding:8px 18px;font-weight:800;font-size:12px;cursor:pointer}
     f.src = base + '&epr=' + tries;
   };
 
-  setTimeout(window.reloadFrame, 8000);
-  setTimeout(function(){ if (!settled) window.reloadFrame(); }, 16000);
-  setTimeout(function(){ if (!settled) bar(); }, 25000);
+  setTimeout(window.reloadFrame, 9000);
+  setTimeout(function(){ window.reloadFrame(); }, 17000);
+  setTimeout(function(){ bar(); }, 26000);
 })();
 </script>
 </body></html>`;
