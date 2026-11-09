@@ -28,8 +28,7 @@ export const RelatedMediaSection: React.FC<RelatedMediaSectionProps> = ({
   return (
     <motion.section
       initial={{ opacity: 0, y: 20 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true }}
+      animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
       id="related-media-section"
       className="mt-14 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"

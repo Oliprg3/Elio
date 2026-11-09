@@ -54,8 +54,7 @@ export const MediaTray: React.FC<MediaTrayProps> = ({
   return (
     <motion.section
       initial={{ opacity: 0, y: 15 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: '-40px' }}
+      animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
       className="relative my-7 sm:my-9 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto group/tray"
     >

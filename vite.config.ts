@@ -7,6 +7,20 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig(() => {
   return {
     envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
+    build: {
+      // TV browsers and older Android WebViews choke on ES2020+ output
+      // (class fields, ?. ??= chains). es2017 syntax keeps every device.
+      target: 'es2017',
+    },
+    css: {
+      // Tailwind v4 emits oklch()/color-mix() colors; lightningcss downgrades
+      // them to plain rgb() for browsers without Chrome 111+ support.
+      transformer: 'lightningcss' as const,
+      lightningcss: {
+        targets: { chrome: (88 << 16) | (0 << 8) | 0, firefox: (78 << 16) | (0 << 8) | 0, safari: (13 << 16) | (1 << 8) | 0 },
+        errorRecovery: true,
+      },
+    },
     plugins: [
       react(),
       tailwindcss(),
