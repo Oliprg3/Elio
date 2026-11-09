@@ -175,6 +175,31 @@ const POPUP_SUSPECT_PATHS = [
   'utm_campaign=popunder',
 ];
 
+/**
+ * Domains that are part of the streaming chain itself. window.open /
+ * navigations toward them are LEGITIMATE player actions (activation,
+ * redirect back to self, bot-check callbacks) and must never be treated
+ * as popunder ads, regardless of shield level.
+ */
+export const PLAYER_CHAIN_HOSTS = [
+  'vidzee.wtf',
+  'vaplayer.ru',
+  'nextgencloudfabric.com',
+  'elio-e5re.onrender.com',
+];
+
+export function isPlayerChainUrl(testUrl: string): boolean {
+  if (!testUrl) return false;
+  try {
+    const url = new URL(testUrl, window.location.href);
+    const host = url.hostname.toLowerCase();
+    if (PLAYER_CHAIN_HOSTS.some((h) => host === h || host.endsWith('.' + h))) return true;
+    // self-origin targets (the app reloading itself, proxy page reloads)
+    if (host === window.location.hostname.toLowerCase()) return true;
+  } catch (_) {}
+  return false;
+}
+
 class AdBlockerEngine {
   private level: AdBlockLevel = 'strict';
   private stats: AdBlockStats = {
@@ -355,11 +380,12 @@ class AdBlockerEngine {
       let block = false;
       let reason = '';
 
-      if (isSuppressed) {
+      const chainUrl = isPlayerChainUrl(targetUrl);
+      if (isSuppressed && !chainUrl) {
         // Transition/burst protection window is active — zero tolerance
         block = true;
         reason = 'transition/burst suppression active';
-      } else if (this.level === 'strict') {
+      } else if (this.level === 'strict' && !chainUrl) {
         block = true;
         reason = 'strict mode';
       } else if (this.level === 'balanced') {
@@ -708,10 +734,11 @@ class AdBlockerEngine {
         const isUnsafeScheme = /^(javascript|data|vbscript):/i.test(targetUrl);
         let block = false;
         let reason = '';
-        if (Date.now() < this.suppressionUntil) {
+        const chainUrl = targetUrl ? isPlayerChainUrl(targetUrl) : false;
+        if (Date.now() < this.suppressionUntil && !chainUrl) {
           block = true;
           reason = 'suppression window';
-        } else if (this.level === 'strict') {
+        } else if (this.level === 'strict' && !chainUrl) {
           block = true;
           reason = 'strict mode (frame)';
         } else if (this.level === 'balanced') {
@@ -951,11 +978,10 @@ class AdBlockerEngine {
       return undefined;
     }
 
-    // Strict Anti-Redirect & Anti-Popup Sandbox:
-    // NO allow-top-navigation (completely blocks external site redirects)
-    // NO allow-top-navigation-by-user-activation
-    // NO allow-popups (blocks popup tabs)
-    return 'allow-scripts allow-same-origin allow-presentation allow-pointer-lock allow-forms';
+    // Include allow-popups so the provider's own activation windows and
+    // bot-check callbacks can open; popunders are still caught by the
+    // frame realm's open() trap, which only lets PLAYER_CHAIN_HOSTS pass.
+    return 'allow-scripts allow-same-origin allow-presentation allow-pointer-lock allow-forms allow-popups allow-popups-to-escape-sandbox';
   }
 }
 
