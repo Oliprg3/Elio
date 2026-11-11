@@ -823,17 +823,6 @@ export const WatchView: React.FC<WatchViewProps> = ({
                 allowFullScreen
                 allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
                 referrerPolicy="origin"
-                sandbox={
-                  // Proxied pages are served from our own origin and guarded
-                  // by a strict CSP. Do NOT sandbox them: sandbox flags are
-                  // inherited by nested iframes, and VidZee's real player
-                  // (vaplayer.ru) breaks when it inherits an opaque origin.
-                  useShieldProxy
-                    ? undefined
-                    : isVidzee
-                      ? adBlocker.getIframeSandboxAttributes() || 'allow-scripts allow-same-origin allow-presentation allow-pointer-lock allow-forms'
-                      : undefined
-                }
               />
             )}
           </>
