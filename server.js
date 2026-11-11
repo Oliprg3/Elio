@@ -236,21 +236,29 @@ function buildShieldCsp(origin, provider, html) {
 }
 
 function serveShieldedEmbed(req, res, upstreamPath, provider = 'vidzee') {
-  // Single provider: VidZee. Serve our own minimal black page framing
-  // vidzee's own player loader (vaplayer), which carries the full VidZee
-  // chain end to end. No alternates.
+  // Single provider: VidZee. The OUTER frame is our own minimal black page;
+  // it frames the REAL VidZee embed page through this same proxy (raw=1),
+  // so the on-screen player is VidZee's own branded player. If the shell
+  // cannot be fetched, the raw route degrades to the direct vaplayer loader.
   const match = String(upstreamPath || '').match(/\/?embed\/(movie|tv)\/(\d+)(?:\/(\d+)(?:\/(\d+))?)?/);
   if (provider !== 'vidzee' || !match) {
     return serveShieldFallback(req, res, provider, 404);
   }
-  const [, type, idStr, sStr, eStr] = match;
-  let src = `https://vaplayer.ru/embed/${type}/${encodeURIComponent(idStr)}`;
-  if (type === 'tv' && sStr) {
-    src += `/${encodeURIComponent(sStr)}/${encodeURIComponent(eStr || '1')}`;
+  if (String(req.query.raw || '') === '1') {
+    return serveVidzeeShell(req, res, upstreamPath, provider);
   }
+
+  const [, type, idStr, sStr, eStr] = match;
+  let direct = `https://vaplayer.ru/embed/${type}/${encodeURIComponent(idStr)}`;
+  if (type === 'tv' && sStr) {
+    direct += `/${encodeURIComponent(sStr)}/${encodeURIComponent(eStr || '1')}`;
+  }
+  const vidzee = `https://player.vidzee.wtf${upstreamPath}`;
+  const rawSrc = `${PROXY_PREFIX}/vidzee${upstreamPath}${upstreamPath.includes('?') ? '&' : '?'}raw=1`;
+
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>elio+ player</title>
+<title>VidZee</title>
 <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}
 iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 #ughty{position:absolute;left:0;right:0;bottom:0;display:none;z-index:3;
@@ -263,11 +271,11 @@ padding:8px 14px;font-size:12px;text-decoration:none;font-weight:700}
 #ughty span{align-self:center}
 </style></head>
 <body>
-<iframe id="pf" referrerpolicy="origin" allowfullscreen allow="autoplay; encrypted-media; fullscreen; picture-in-picture" src="${src}"></iframe>
+<iframe id="pf" referrerpolicy="origin" allowfullscreen allow="autoplay; encrypted-media; fullscreen; picture-in-picture" src="${rawSrc}"></iframe>
 <div id="ughty">
   <span id="ughty-msg">The stream source is busy &#8212; its bot-check keeps failing in this browser.</span>
   <button onclick="reloadFrame()">Try again</button>
-  <a href="${src}" target="_blank" rel="noreferrer noopener">Open directly &#8599;</a>
+  <a href="${vidzee}" target="_blank" rel="noreferrer noopener">Open directly &#8599;</a>
 </div>
 <script>
 (function(){
@@ -278,11 +286,10 @@ padding:8px 14px;font-size:12px;text-decoration:none;font-weight:700}
   function bar(){ var d=document.getElementById('ughty'); if(d && !barShown){ barShown=true; d.style.display='flex'; } }
   function hide(){ var d=document.getElementById('ughty'); if(d){ d.style.display='none'; } }
 
-  // vaplayer never signals readiness to us directly; treat any incoming
-  // vaplayer-origin message as 'the chain is alive' and clear the notice.
   window.addEventListener('message', function(ev){
-    if (!ev || !ev.origin || String(ev.origin).indexOf('vaplayer.ru')===-1) return;
-    settled = true; tries = 99; hide();
+    // The VidZee shell and the vaplayer loader both live inside our own
+    // proxy origin now, so any same-origin message means the chain moved.
+    try { if (ev && ev.origin && ev.origin === location.origin) { settled = true; tries = 99; hide(); } } catch (_) {}
   });
 
   window.reloadFrame = function(){
@@ -295,19 +302,91 @@ padding:8px 14px;font-size:12px;text-decoration:none;font-weight:700}
     f.src = base + '&epr=' + tries;
   };
 
-  setTimeout(window.reloadFrame, 9000);
-  setTimeout(function(){ window.reloadFrame(); }, 17000);
-  setTimeout(function(){ bar(); }, 26000);
+  setTimeout(window.reloadFrame, 10000);
+  setTimeout(function(){ window.reloadFrame(); }, 18000);
+  setTimeout(function(){ bar(); }, 27000);
 })();
 </script>
 </body></html>`;
-  console.log(`[shield] vidzee player: ${src}`);
+  console.log(`[shield] vidzee shell frame: ${upstreamPath}`);
+  res.set('Content-Security-Policy',
+    "default-src 'none'; frame-src https: ; style-src 'unsafe-inline'; img-src data: https:; form-action 'none'; base-uri 'none'");
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Referrer-Policy', 'origin');
+  res.set('Cache-Control', 'no-store');
+  return res.type('text/html; charset=utf-8').send(html);
+}
+
+// Serve VidZee's REAL embed page (branded shell) rewritten to our origin.
+// Falls back to the bare vaplayer loader page when the shell is unavailable,
+// so playback still has a path during VidZee-side hiccups.
+async function serveVidzeeShell(req, res, upstreamPath, provider) {
+  let shellHtml = null;
+  try {
+    const upstream = await fetchUpstreamResilient(
+      `${PROXIED_PROVIDERS.vidzee}${upstreamPath}`,
+      req,
+      provider
+    );
+    const contentType = upstream.headers.get('content-type') || '';
+    if (upstream.ok && contentType.includes('text/html')) {
+      const text = await upstream.text();
+      if (/<\/head>/i.test(text) && /Vidzee|vidzee/i.test(text)) {
+        shellHtml = text;
+      }
+    }
+  } catch (err) {
+    console.warn('[shield] vidzee shell fetch failed:', String(err).slice(0, 140));
+  }
+
+  if (shellHtml) {
+    const origin = shieldOrigin(req);
+    const assetPrefix = `${origin}${PROXY_PREFIX}/${provider}/assets/`;
+    shellHtml = shellHtml.replace(
+      /<script\b[^>]*\bsrc="([^"]*)"[^>]*>\s*<\/script>/gi,
+      (tag, src) => (AD_HOST_PATTERN.test(src) ? '' : tag)
+    );
+    shellHtml = shellHtml.replace(
+      /<iframe\b[^>]*\bsrc="([^"]*)"[^>]*>(?:\s*<\/iframe>)?/gi,
+      (tag, src) => (AD_HOST_PATTERN.test(src) ? '' : tag)
+    );
+    shellHtml = shellHtml
+      .split('/assets/')
+      .join(assetPrefix)
+      .split('/_next/')
+      .join(`${origin}${PROXY_PREFIX}/${provider}/_next/`);
+    shellHtml = rewriteProviderOrigins(Buffer.from(shellHtml), 'text/html', req).toString('utf8');
+    shellHtml = shellHtml.replace('</head>', `<style>${SHIELD_CSS}</style></head>`);
+    res.set('Content-Security-Policy', buildShieldCsp(origin, provider, shellHtml));
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Referrer-Policy', 'origin');
+    res.set('Cache-Control', 'no-store');
+    console.log(`[shield] vidzee branded shell: ${upstreamPath}`);
+    return res.type('text/html; charset=utf-8').send(shellHtml);
+  }
+
+  // Fallback: bare vaplayer loader (works even while the VidZee shell is down)
+  const match = String(upstreamPath || '').match(/\/?embed\/(movie|tv)\/(\d+)(?:\/(\d+)(?:\/(\d+))?)?/);
+  const [, type, idStr, sStr, eStr] = match;
+  let src = `https://vaplayer.ru/embed/${type}/${encodeURIComponent(idStr)}`;
+  if (type === 'tv' && sStr) {
+    src += `/${encodeURIComponent(sStr)}/${encodeURIComponent(eStr || '1')}`;
+  }
+  console.log(`[shield] vidzee shell unavailable, bare loader: ${src}`);
   res.set('Content-Security-Policy',
     "default-src 'none'; frame-src https:; style-src 'unsafe-inline'; img-src data: https:; form-action 'none'; base-uri 'none'");
   res.set('X-Content-Type-Options', 'nosniff');
   res.set('Referrer-Policy', 'origin');
   res.set('Cache-Control', 'no-store');
-  return res.type('text/html; charset=utf-8').send(html);
+  return res.type('text/html; charset=utf-8').send(
+    `<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VidZee</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}
+iframe{position:absolute;inset:0;width:100%;height:100%;border:0}</style></head>
+<body><iframe id="pf" referrerpolicy="origin" allowfullscreen
+allow="autoplay; encrypted-media; fullscreen; picture-in-picture" src="${src}"></iframe></body></html>`
+  );
 }
 
 app.options(`${PROXY_PREFIX}/health`, (req, res) => {
