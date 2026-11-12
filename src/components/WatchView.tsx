@@ -43,6 +43,7 @@ import { RelatedMediaSection } from './RelatedMediaSection';
 import { DownloadMediaModal } from './DownloadMediaModal';
 import { adBlocker, AdBlockLevel } from '../services/adBlocker';
 import { probeStreamProxy, proxiedEmbedUrl } from '../services/streamProxy';
+import { resolveVidzeeStream } from '../services/vidzeeStreams';
 
 interface WatchViewProps {
   type: 'movie' | 'tv';
@@ -93,6 +94,10 @@ export const WatchView: React.FC<WatchViewProps> = ({
   const [playerNotification, setPlayerNotification] = useState<string | null>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const playerFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const [directPlaylist, setDirectPlaylist] = useState<string | null>(null);
+  const [directStatus, setDirectStatus] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle');
+  const directVideoRef = useRef<HTMLVideoElement | null>(null);
+  const hlsRef = useRef<{ destroy: () => void } | null>(null);
 
   // Harden the SAME-ORIGIN player frame (the server-side shield proxy path):
   // the proxy re-serves provider embeds from our own origin, so we can reach
@@ -190,6 +195,84 @@ export const WatchView: React.FC<WatchViewProps> = ({
 
   // Auto-fallback removed: VidZee is the only provider now, so there is
   // nothing to hop to and no probe needed.
+
+  // VidZee direct-stream path: resolve the m3u8 through our own server and
+  // play it with hls.js in a native <video>. This skips VidZee's vaplayer
+  // iframe, its ad chain and its Turnstile wall entirely. The VidZee embed
+  // iframe below stays as the fallback when the resolver has no link.
+  useEffect(() => {
+    if (streamSource === 'pending') return;
+    let alive = true;
+    setDirectPlaylist(null);
+    setDirectStatus('loading');
+    resolveVidzeeStream({
+      type,
+      id: String(id),
+      season: type === 'tv' ? selectedSeason : undefined,
+      episode: type === 'tv' ? selectedEpisode : undefined,
+    })
+      .then((r) => {
+        if (!alive) return;
+        if (r?.playlist) {
+          setDirectPlaylist(r.playlist);
+          setDirectStatus('ready');
+        } else {
+          setDirectStatus('failed');
+        }
+      })
+      .catch(() => {
+        if (alive) setDirectStatus('failed');
+      });
+    return () => {
+      alive = false;
+    };
+  }, [streamSource, type, id, selectedSeason, selectedEpisode]);
+
+  // Attach hls.js once the direct playlist is available.
+  useEffect(() => {
+    const video = directVideoRef.current;
+    if (!directPlaylist || !video) return;
+    let cancelled = false;
+    let hls: any = null;
+    (async () => {
+      try {
+        const mod = await import('hls.js');
+        const Hls = mod.default;
+        if (cancelled) return;
+        if (Hls.isSupported()) {
+          hls = new Hls({ enableWorker: true, backBufferLength: 90 });
+          hlsRef.current = hls;
+          hls.loadSource(directPlaylist);
+          hls.attachMedia(video);
+          hls.on(Hls.Events.ERROR, (_evt: unknown, data: any) => {
+            if (!data?.fatal) return;
+            if (data.type === 'networkError' && data.details === 'manifestLoadError') {
+              setDirectStatus('failed');
+            } else {
+              try {
+                hls?.recoverMediaError();
+              } catch (_) {
+                setDirectStatus('failed');
+              }
+            }
+          });
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = directPlaylist;
+        }
+        video.play().catch(() => {});
+      } catch (_) {
+        if (!cancelled) setDirectStatus('failed');
+      }
+    })();
+    return () => {
+      cancelled = true;
+      try {
+        hls?.destroy();
+      } catch (_) {}
+      hlsRef.current = null;
+    };
+  }, [directPlaylist]);
+
 
   // Sync state instantly if type or id changes
   useEffect(() => {
@@ -811,6 +894,21 @@ export const WatchView: React.FC<WatchViewProps> = ({
                 <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
                 <span className="text-xs text-zinc-400 font-medium tracking-wide">Preparing protected stream...</span>
               </div>
+            ) : directStatus === 'loading' ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black">
+                <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                <span className="text-xs text-zinc-400 font-medium tracking-wide">Resolving stream...</span>
+              </div>
+            ) : directPlaylist ? (
+              <video
+                ref={directVideoRef}
+                id="cinestream-direct-video"
+                title={`${title} Stream Player`}
+                className="absolute inset-0 w-full h-full border-0 bg-black"
+                playsInline
+                controls
+                autoPlay
+              />
             ) : (
               <iframe
                 ref={playerFrameRef}

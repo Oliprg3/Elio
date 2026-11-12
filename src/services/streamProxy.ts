@@ -47,6 +47,11 @@ export function getStreamProxyMode(): StreamProxyMode {
   return mode;
 }
 
+/** Base origin for our own /api/vidzee/* endpoints (same-origin or remote). */
+export function getStreamApiBase(): string {
+  return mode === 'remote' ? REMOTE_PROXY_ORIGIN : '';
+}
+
 /**
  * Builds the shielded embed URL for the app's single VidZee provider.
  *   upstream `/embed/movie/:id` -> `<base>/player-proxy/embed/movie/:id`

@@ -2,11 +2,20 @@ import express from 'express';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+
+// A single failed upstream fetch must never take the whole server down.
+process.on('uncaughtException', (err) => {
+  console.error('uncaughtException:', err?.message || err);
+});
+process.on('unhandledRejection', (err) => {
+  console.error('unhandledRejection:', err?.message || err);
+});
 const port = process.env.PORT || 3000;
 
 // ---------------------------------------------------------------------------
@@ -388,6 +397,176 @@ iframe{position:absolute;inset:0;width:100%;height:100%;border:0}</style></head>
 allow="autoplay; encrypted-media; fullscreen; picture-in-picture" src="${src}"></iframe></body></html>`
   );
 }
+
+// ---------------------------------------------------------------------------
+// VidZee direct-stream pipeline.
+// VidZee's own player resolves m3u8 links from core.vidzee.wtf and plays them
+// inside a vaplayer iframe behind a Cloudflare Turnstile wall. We skip all of
+// that: resolve the link server-side (the core API accepts plain requests with
+// a browser UA + Referer), then proxy the HLS playlist and media segments
+// through this origin so the browser never touches the third-party CDNs.
+// ---------------------------------------------------------------------------
+const vidzeeCrypto = createRequire(import.meta.url)('./vidzeeCrypto.cjs');
+const CORE_ORIGIN = 'https://core.vidzee.wtf';
+const CORE_UA =
+  'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36';
+const CORE_REFERER = 'https://player.vidzee.wtf/';
+// Order matters: dcloud is the most reliable core backend, then the rest.
+const VIDZEE_SERVER_FALLBACKS = {
+  movie: ['dcloud', 'peak', 'v4:Hindi', 'tik'],
+  tv: ['dcloud', 'v4:Hindi', 'tik'],
+};
+
+function b64urlDecode(value) {
+  let s = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  return Buffer.from(s, 'base64').toString('utf8');
+}
+
+function b64urlEncode(value) {
+  return Buffer.from(String(value), 'utf8')
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
+async function coreResolve(type, id, season, episode, serverId) {
+  const path =
+    type === 'movie'
+      ? `/streams/movie/${encodeURIComponent(id)}?s=${encodeURIComponent(serverId)}&e=1`
+      : `/streams/tv/${encodeURIComponent(id)}/${encodeURIComponent(season)}/${encodeURIComponent(episode)}?s=${encodeURIComponent(serverId)}&e=1`;
+  const r = await fetch(CORE_ORIGIN + path, {
+    headers: { 'User-Agent': CORE_UA, Referer: CORE_REFERER },
+  }).catch(() => null);
+  if (!r || !r.ok) return null;
+  const body = await r.json().catch(() => null);
+  if (!body) return null;
+  if (body.c && typeof body.c === 'string' && !body.url) {
+    // Encrypted payload: decrypt with the same WASM VidZee's player uses.
+    const decrypted = await vidzeeCrypto.wasmDecrypt(body.c).catch(() => null);
+    if (!decrypted || !decrypted.url) return null;
+    return { url: decrypted.url, language: decrypted.language };
+  }
+  return body.url ? { url: body.url, language: body.language } : null;
+}
+
+function coreHeaders(extra) {
+  return Object.assign(
+    { 'User-Agent': CORE_UA, Referer: CORE_REFERER },
+    extra || {}
+  );
+}
+
+app.options('/api/vidzee/streams', (_req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  return res.status(204).end();
+});
+
+app.get('/api/vidzee/streams', async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  const type = req.query.type === 'tv' ? 'tv' : 'movie';
+  const id = String(req.query.id || '').replace(/[^0-9]/g, '');
+  if (!id) return res.status(400).json({ ok: false, error: 'id required' });
+  const season = String(req.query.season || '1').replace(/[^0-9]/g, '') || '1';
+  const episode = String(req.query.episode || '1').replace(/[^0-9]/g, '') || '1';
+  const requested = String(req.query.server || '').trim();
+  const chain = requested
+    ? [requested]
+    : VIDZEE_SERVER_FALLBACKS[type] || ['dcloud'];
+
+  for (const serverId of chain) {
+    const resolved = await coreResolve(type, id, season, episode, serverId).catch(
+      () => null
+    );
+    if (resolved && resolved.url) {
+      return res.json({
+        ok: true,
+        playlist: `/api/vidzee/playlist?u=${b64urlEncode(resolved.url)}`,
+        language: resolved.language || 'Auto',
+        server: serverId,
+      });
+    }
+  }
+  return res.status(502).json({ ok: false, error: 'No stream available' });
+});
+
+app.get('/api/vidzee/playlist', async (req, res) => {
+  const url = b64urlDecode(String(req.query.u || ''));
+  if (!/^https?:\/\//i.test(url)) {
+    return res.status(400).json({ ok: false, error: 'bad url' });
+  }
+  let r = null;
+  for (let attempt = 0; attempt < 2 && !r; attempt++) {
+    r = await fetch(url, {
+      headers: coreHeaders(),
+      signal: AbortSignal.timeout(20000),
+    }).catch(() => null);
+  }
+  if (!r || !r.ok) return res.status(502).send('playlist fetch failed');
+  const base = new URL(url);
+  let text;
+  try {
+    text = await r.text();
+  } catch (_) {
+    return res.status(502).send('playlist read failed');
+  }
+  const out = text
+    .split('\n')
+    .map((line) => {
+      const t = line.trim();
+      if (!t) return line;
+      if (t.startsWith('#')) {
+        // Rewrite attribute URIs (keys, maps, alternate audio/subtitle tracks).
+        return line.replace(/URI="([^"]+)"/g, (_m, uri) => {
+          const abs = /^https?:\/\//i.test(uri)
+            ? uri
+            : new URL(uri, base).toString();
+          return `URI="/api/vidzee/media?u=${b64urlEncode(abs)}"`;
+        });
+      }
+      const abs = /^https?:\/\//i.test(t) ? t : new URL(t, base).toString();
+      return `/api/vidzee/media?u=${b64urlEncode(abs)}`;
+    })
+    .join('\n');
+  res.set('Content-Type', 'application/vnd.apple.mpegurl');
+  res.set('Cache-Control', 'no-store');
+  res.set('Access-Control-Allow-Origin', '*');
+  return res.send(out);
+});
+
+app.get('/api/vidzee/media', async (req, res) => {
+  const url = b64urlDecode(String(req.query.u || ''));
+  if (!/^https?:\/\//i.test(url)) {
+    return res.status(400).json({ ok: false, error: 'bad url' });
+  }
+  const headers = coreHeaders();
+  const range = req.headers.range;
+  if (range) headers.Range = range;
+  const r = await fetch(url, {
+    headers,
+    signal: AbortSignal.timeout(25000),
+  }).catch(() => null);
+  if (!r) return res.status(502).send('media fetch failed');
+  const out = {};
+  const pass = ['content-type', 'content-length', 'content-range', 'accept-ranges'];
+  for (const h of pass) {
+    const v = r.headers.get(h);
+    if (v) out[h] = v;
+  }
+  out['Access-Control-Allow-Origin'] = '*';
+  out['Cache-Control'] = 'no-store';
+  res.writeHead(r.status, out);
+  if (!r.body) return res.end();
+  const { Readable } = await import('stream');
+  const stream =
+    typeof r.body.pipe === 'function'
+      ? r.body
+      : Readable.fromWeb(r.body);
+  stream.on('error', () => res.end());
+  stream.pipe(res);
+});
 
 app.options(`${PROXY_PREFIX}/health`, (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
